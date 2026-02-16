@@ -1,0 +1,112 @@
+:root{
+  --bg:#0f1724;
+  --card:#111827;
+  --muted:#9ca3af;
+  --accent:#06b6d4;
+  --accent-2:#7c3aed;
+  --win:#16a34a;
+  --lose:#dc2626;
+}
+:root{
+  --bg:#f7f9fb;
+  --card:#ffffff;
+  --muted:#6b7280;
+  --accent:#0ea5b7; /* teal */
+  --accent-2:#7c3aed; /* purple */
+  --win:#16a34a;
+  --lose:#dc2626;
+}
+.hidden{display:none}
+.char-card,.card{background:linear-gradient(180deg,#0b1220, #0f1724);border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:6px;min-width:110px}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial; background:linear-gradient(180deg,var(--bg),#ffffff); color:#0f1724; margin:0; padding:16px}
+.char-card.clickable:hover{transform:translateY(-4px);box-shadow:0 8px 18px rgba(7,128,158,0.18);cursor:pointer;border-color:rgba(6,182,212,0.18)}
+.card-grid{display:flex;flex-wrap:wrap;gap:8px}
+.char-card .name{font-weight:700}
+.char-card,.card{background:var(--card);border:1px solid rgba(15,23,36,0.06);padding:8px;border-radius:6px;min-width:110px}
+.players-row{display:flex;gap:12px;justify-content:space-between;margin-bottom:12px}
+.char-card.clickable:hover{transform:translateY(-4px);box-shadow:0 8px 18px rgba(14,165,183,0.12);cursor:pointer;border-color:rgba(14,165,183,0.18)}
+.player-panel h3{margin:0 0 8px 0}
+.card.small:hover{transform:translateY(-3px);box-shadow:0 6px 12px rgba(14,165,183,0.06);cursor:pointer}
+.player-panel{transition:all 300ms ease}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+
+/* Use semantic header tag */
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+@keyframes playerPulse{0%{transform:scale(1)}50%{transform:scale(1.03)}100%{transform:scale(1)}}
+h1{font-size:18px;margin:0}
+.draft-players{display:flex;gap:12px;margin-bottom:12px}
+#status{font-size:13px;color:var(--muted)}
+.draft-panel h4{margin:0 0 8px 0;font-size:13px}
+main{margin-top:18px}
+#draft-info{margin-bottom:12px;padding-bottom:6px}
+.player-panel.active{box-shadow:0 12px 30px rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.12);background:linear-gradient(180deg, rgba(124,58,237,0.02), rgba(14,165,183,0.02));transform:translateY(-4px);transition:all 300ms ease}
+#action-area{display:flex;gap:12px}
+.draft-panel{flex:1;padding:8px;background:var(--card);border-radius:6px;border:1px solid rgba(15,23,36,0.06)}
+.card{cursor:pointer}
+#controls{display:flex;gap:12px}
+.flag-badge{display:inline-block;background:#f3f4f6;color:#374151;padding:2px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+.selected{outline:2px solid var(--accent);box-shadow:0 0 8px rgba(6,182,212,0.12)}
+#log{background:linear-gradient(180deg,#ffffff,#f8fafc);padding:8px;height:320px;overflow:auto;border-radius:6px;border:1px solid rgba(15,23,36,0.06);color:var(--muted)}
+.ko{opacity:0.35;text-decoration:line-through}
+button{background:var(--accent);border:none;color:white;padding:8px 10px;border-radius:6px;cursor:pointer}
+.flag-badge{display:inline-block;background:#1f2937;color:#cbd5e1;padding:2px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+button.secondary{background:transparent;border:1px solid rgba(15,23,36,0.06);color:var(--muted)}
+.turn-controls{display:flex;gap:8px;margin-top:8px}
+#modal:not(.hidden){position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.06);z-index:60}
+button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+#modal-inner{background:var(--card);padding:16px;border-radius:8px;min-width:320px;border:1px solid rgba(15,23,36,0.06)}
+.ko-badge{display:inline-block;background:var(--lose);color:#fff;padding:2px 6px;border-radius:4px;font-size:12px;margin-left:6px}
+#floating-actions{position:fixed;right:18px;bottom:18px;z-index:80;display:flex;gap:8px;align-items:center}
+@media (max-width:800px){
+#floating-actions button{background:transparent;border:1px solid rgba(15,23,36,0.06);color:var(--muted);padding:8px 10px;border-radius:8px;font-size:13px;cursor:pointer;box-shadow:none;transition:transform 160ms ease, box-shadow 160ms ease, color 160ms ease, background 160ms ease}
+  .card-grid{justify-content:flex-start}
+#floating-actions button:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(14,165,183,0.04);color:var(--accent)}
+
+#floating-actions button:active{transform:translateY(-1px)}
+@media (max-width:800px){
+  /* Mobile: show modal overlay only when not hidden */
+  #modal:not(.hidden){position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:60}
+}
+#modal-inner{background:linear-gradient(180deg,#071126,#081426);padding:16px;border-radius:8px;min-width:320px;border:1px solid rgba(255,255,255,0.04)}
+#modal-body{max-height:320px;overflow:auto;margin:8px 0}
+/* Responsive layout: larger screens show log on right; small screens stack vertically */
+@media (min-width:900px){
+  #controls{display:flex;flex-direction:row;gap:12px;align-items:flex-start}
+  #hand-area{flex:1}
+  #log-area{flex:0 0 320px}
+  .players-row{margin-bottom:12px}
+}
+@media (max-width:899px){
+  .players-row{flex-direction:column}
+  .card-grid{justify-content:flex-start}
+  #controls{display:flex;flex-direction:column}
+  #log{height:160px}
+}
+#modal-actions{display:flex;gap:8px;justify-content:flex-end}
+#modal input[type=number]{width:72px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+#modal .donor-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,0.02)}
+#modal .donor-name{font-weight:600}
+
+/* Floating reset button */
+/* Floating actions (Undo / Redo / Reset) in a subtle row bottom-right */
+#floating-actions{position:fixed;right:18px;bottom:18px;z-index:80;display:flex;gap:8px;align-items:center}
+#floating-actions button{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:8px 10px;border-radius:8px;font-size:13px;cursor:pointer;box-shadow:none;transition:transform 160ms ease, box-shadow 160ms ease, color 160ms ease, background 160ms ease}
+#floating-actions button:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(7,128,158,0.04);color:var(--accent)}
+#floating-actions button:active{transform:translateY(-1px)}
+/* Slightly emphasize Reset so it's discoverable but still subtle */
+/* Reset styled same as other floating buttons (subtle) */
+#floating-actions #reset-btn{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+#floating-actions #reset-btn:hover{color:var(--accent);box-shadow:0 8px 20px rgba(7,128,158,0.04);transform:translateY(-3px)}
+
+/* Make selected/targetable characters more obvious on hover */
+.char-card{transition:transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease}
+.char-card.selected{outline:2px dashed var(--accent-2);background:linear-gradient(180deg,#0f1a27,#0b151f);border-color:rgba(6,182,212,0.12);cursor:pointer}
+.char-card.selected:hover{transform:translateY(-6px);box-shadow:0 14px 30px rgba(6,182,212,0.08)}
+.char-card:not(.selected):hover{transform:translateY(-3px);box-shadow:0 8px 18px rgba(7,128,158,0.04)}
+
+/* Make selectable card tiles in hand slightly clearer */
+.card{transition:transform 160ms ease, box-shadow 160ms ease}
+.card:hover{transform:translateY(-4px);box-shadow:0 8px 18px rgba(7,128,158,0.06)}
+
+/* Disabled state for floating buttons */
+#floating-actions button:disabled{opacity:0.38;cursor:not-allowed;transform:none;box-shadow:none;color:rgba(156,163,175,0.7)}
