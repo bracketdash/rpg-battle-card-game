@@ -28,7 +28,7 @@
       state.draftPool.forEach((c, idx) => {
         const el = document.createElement('div');
         el.className = 'char-card';
-        if (picksLeft > 0) {
+        if (picksLeft > 0 && !state.uiLocked) {
           el.classList.add('clickable');
           el.addEventListener('click', () => window.rpgGame.appPickChar ? window.rpgGame.appPickChar(idx) : window.rpgGame.app && window.rpgGame.app.pickChar && window.rpgGame.app.pickChar(idx));
         }
@@ -45,8 +45,11 @@
         availableCharacters.innerHTML = '';
         state.draftPool.forEach((c, idx) => {
           const el = document.createElement('div');
-          el.className = 'char-card clickable';
-          el.addEventListener('click', () => window.rpgGame.appPickChar ? window.rpgGame.appPickChar(idx) : window.rpgGame.app.pickChar(idx));
+          el.className = 'char-card';
+          if (!state.uiLocked) {
+            el.classList.add('clickable');
+            el.addEventListener('click', () => window.rpgGame.appPickChar ? window.rpgGame.appPickChar(idx) : window.rpgGame.app.pickChar(idx));
+          }
           el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.hp} • STR ${c.str} • MAG ${c.mag}</div>`;
           availableCharacters.appendChild(el);
         });
@@ -135,27 +138,52 @@
   function renderHands() {
     const state = getState();
     const handEls = [$("#hand-1"), $("#hand-2")];
+    // If playability functions aren't available yet, we may need to re-render
+    // shortly after app/gameCore initialize. Use a local pending flag to avoid
+    // flooding renders.
+    if (typeof window !== 'undefined' && !renderHands._pendingRerender && !(window.rpgGame && window.rpgGame.app && typeof window.rpgGame.app.isCardPlayable === 'function') && !(window.gameCore && typeof window.gameCore.isCardPlayable === 'function')) {
+      renderHands._pendingRerender = true;
+      setTimeout(() => { renderHands._pendingRerender = false; try { renderHands(); } catch (e) {} }, 120);
+    }
     handEls.forEach((container, playerIdx)=>{
       if (!container) return;
       container.innerHTML='';
       const hand = state.players[playerIdx].hand || [];
       hand.forEach((c, idx)=>{
         const ce = document.createElement('div'); ce.className='card small'; ce.dataset.idx = idx;
-        if (playerIdx === state.currentPlayer) {
-          ce.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">${c.desc||c.name}</div>`;
-          if (c.desc) ce.title = c.desc;
-          ce.addEventListener('click', ()=> { if (window.rpgGame && window.rpgGame.appSelectCard) window.rpgGame.appSelectCard(idx); else if(window.rpgGame && window.rpgGame.app && window.rpgGame.app.selectCard) window.rpgGame.app.selectCard(idx); });
-          // determine if this card is actually playable for current actor
-          try {
-            const actorIdx = (function(){ let ai = state.nextCharIndex; while(ai < state.players[state.currentPlayer].chars.length && (state.players[state.currentPlayer].chars[ai].isKO || state.players[state.currentPlayer].usedThisTurn.includes(ai))) ai++; return ai; })();
-            // Prefer the canonical app-level playability check if exposed, otherwise fallback to gameCore hook
-            const playable = (window.rpgGame && window.rpgGame.app && typeof window.rpgGame.app.isCardPlayable === 'function')
-              ? window.rpgGame.app.isCardPlayable(c, { player: state.currentPlayer, actorIdx })
-              : (window.gameCore && typeof window.gameCore.isCardPlayable === 'function') ? window.gameCore.isCardPlayable(c, { player: state.currentPlayer, actorIdx }) : true;
-            if (playable) { ce.classList.add('clickable'); ce.title = c.desc || ''; } else { ce.classList.remove('clickable'); ce.title = 'This card cannot be played by the current actor'; }
-          } catch(e){ ce.classList.add('clickable'); }
-          if (state.selectedCardIdx === idx) ce.classList.add('selected');
-        } else { ce.classList.add('facedown'); ce.innerHTML = `<div class="back-face">&nbsp;</div>`; }
+          if (playerIdx === state.currentPlayer) {
+            ce.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">${c.desc||c.name}</div>`;
+            if (c.desc) ce.title = c.desc;
+            // determine if this card is actually playable for current actor
+            try {
+              const actorIdx = (function(){ let ai = state.nextCharIndex; while(ai < state.players[state.currentPlayer].chars.length && (state.players[state.currentPlayer].chars[ai].isKO || state.players[state.currentPlayer].usedThisTurn.includes(ai))) ai++; return ai; })();
+              // Prefer the canonical app-level playability check if exposed, otherwise fallback to gameCore hook
+              const playable = (window.rpgGame && window.rpgGame.app && typeof window.rpgGame.app.isCardPlayable === 'function')
+                ? window.rpgGame.app.isCardPlayable(c, { player: state.currentPlayer, actorIdx })
+                : (window.gameCore && typeof window.gameCore.isCardPlayable === 'function') ? window.gameCore.isCardPlayable(c, { player: state.currentPlayer, actorIdx }) : false;
+              // conservative default: if we cannot determine playability yet, assume NOT playable
+              if (playable && !state.uiLocked) {
+                ce.addEventListener('click', ()=> { if (window.rpgGame && window.rpgGame.appSelectCard) window.rpgGame.appSelectCard(idx); else if(window.rpgGame && window.rpgGame.app && window.rpgGame.app.selectCard) window.rpgGame.app.selectCard(idx); });
+                ce.classList.add('clickable');
+                ce.title = c.desc || '';
+              } else {
+                ce.classList.remove('clickable');
+                ce.title = 'This card cannot be played by the current actor';
+              }
+            } catch(e){
+              // if the playability check fails, conservatively do not make the card clickable
+              ce.classList.remove('clickable');
+              ce.title = 'This card cannot be played by the current actor';
+            }
+            if (state.selectedCardIdx === idx) ce.classList.add('selected');
+            // transient highlight for recently stolen card (set by actionsModule)
+            try {
+              if (state._stealHighlight && state._stealHighlight.player === playerIdx && state._stealHighlight.idx === idx) {
+                ce.classList.add('stolen');
+                try { console.debug('renderHands: applying stolen highlight', state._stealHighlight); } catch (e) {}
+              }
+            } catch (e) {}
+          } else { ce.classList.add('facedown'); ce.innerHTML = `<div class="back-face">&nbsp;</div>`; }
         container.appendChild(ce);
       });
     });
@@ -198,9 +226,9 @@
     playerCharsEl.forEach((el)=>{ Array.from(el.children).forEach((ch)=>{ ch.classList.remove('selected'); ch.onclick = null; }); });
     const current = state.players[state.currentPlayer];
     const opp = state.players[1 - state.currentPlayer];
-    if (card.type === 'attack' || card.type === 'attackAll') {
+      if (card.type === 'attack' || card.type === 'attackAll') {
       if (card.type === 'attackAll') {
-        const statusEl = $('#status'); if (statusEl) statusEl.textContent = 'Attack All will hit all opposing characters. Click End Action to confirm.';
+        const statusEl = $('#status'); if (statusEl) statusEl.textContent = 'Attack All will hit all opposing characters. Click Play Card to confirm.';
       } else {
         const targetPanel = playerCharsEl[1 - state.currentPlayer];
         targetPanel.querySelectorAll('.char-card').forEach((el, i)=>{
@@ -235,9 +263,9 @@
           el.title = 'Cannot target this character right now';
         }
       });
-      const statusEl = $('#status'); if (statusEl) statusEl.textContent = 'Click a friendly character to target (or End Action to skip).';
+      const statusEl = $('#status'); if (statusEl) statusEl.textContent = 'Click a friendly character to target (then press Play Card to confirm).';
     } else {
-      const statusEl = $('#status'); if (statusEl) statusEl.textContent = 'Card selected — press End Action to play it (or Pass).';
+      const statusEl = $('#status'); if (statusEl) statusEl.textContent = 'Card selected — press Play Card to play it (or Pass).';
     }
     if (hasTargets) document.body.classList.add('target-mode'); else document.body.classList.remove('target-mode');
   }
@@ -254,11 +282,11 @@
         document.querySelectorAll('.hand-area').forEach((el)=>{ el.style.display='none'; });
         document.querySelectorAll('.turn-controls').forEach((el)=>{ el.style.display='none'; });
         const dp = document.querySelector('.draft-players'); if (dp) dp.style.display='none';
-        const controls = document.getElementById('controls'); if (controls) controls.style.display='none';
+  // top controls removed from DOM; nothing to hide here
       } else {
         document.querySelectorAll('.hand-area').forEach((el)=>{ el.style.display=''; });
         document.querySelectorAll('.turn-controls').forEach((el)=>{ el.style.display=''; });
-        const controls = document.getElementById('controls'); if (controls) controls.style.display='';
+  // top controls removed from DOM; nothing to restore here
         const dp = document.querySelector('.draft-players'); if (dp) dp.style.display='';
         if (draftScreen) draftScreen.classList.add('hidden');
         if (gameScreen) gameScreen.classList.remove('hidden');
@@ -309,6 +337,9 @@
       try { return window.gameCore ? (typeof window.gameCore.isCardPlayable === 'function' ? window.gameCore.isCardPlayable(card, {player:state.currentPlayer, actorIdx:idx}) : true) : true; } catch(e){ return true; }
     });
     skipButtons.forEach((b)=>{ const pi = Number(b.dataset.player); if (pi === state.currentPlayer) b.style.display = playable ? 'none' : ''; else b.style.display='none'; });
+    try { if (!playable) {
+      const statusEl = document.querySelector('#status'); if (statusEl) statusEl.textContent = `${state.players[state.currentPlayer].name}: No actions available. Press Pass button.`;
+    } } catch(e) {}
   }
 
   // export

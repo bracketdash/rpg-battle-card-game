@@ -144,8 +144,41 @@
           const opp2 = state.players[1 - state.currentPlayer];
           if (opp2.hand.length > 0) {
             const sres = window.gameCore.stealCard(opp2.hand, p.hand);
-            opp2.hand = sres.from; p.hand = sres.to;
+            opp2.hand = sres.from;
+            p.hand = sres.to;
             safe(()=>app && app.log && app.log(`${p.name} stole a card from ${opp2.name}.`));
+            // Highlight the newly acquired card briefly before completing the play
+            try {
+              // mark a transient highlight on state so renderHands can style it
+              state._stealHighlight = { player: state.currentPlayer, idx: p.hand.length - 1 };
+              try { console.debug('actionsModule: set _stealHighlight', state._stealHighlight); } catch (e) {}
+              // ensure UI reflects the new hand and highlight
+              safe(()=>app && app.updateUI && app.updateUI());
+              // after 500ms, clear highlight and continue post-play resolution
+              setTimeout(() => {
+                try {
+                  delete state._stealHighlight;
+                  // continue with the shared post-play actions by falling through below
+                  safe(()=>app && app.updateUI && app.updateUI());
+                  // Note: the shared post-play steps (moving played card to discard,
+                  // marking char used, saving state, etc.) will be executed by the
+                  // caller only if we return false here; we signal this by setting
+                  // a flag so outer logic can skip its own completion. But since
+                  // this module controls the flow, we'll perform the post-play
+                  // cleanup here after the highlight.
+                  // move played card to discard and finalize
+                  const played = p.hand.splice(cardIdx,1)[0];
+                  state.discard.push(played);
+                  state.selectedCardIdx = null; state.selectedTarget = null;
+                  safe(()=>app && app.markCharUsed && app.markCharUsed());
+                  safe(()=>app && app.updateUI && app.updateUI());
+                  safe(()=>app && app.saveState && app.saveState());
+                } catch (e) { console.warn('steal highlight completion failed', e); }
+              }, 500);
+            } catch (e) { console.warn('steal highlight scheduling failed', e); }
+            // We handled finalization asynchronously above — return now to avoid
+            // running the shared post-play logic below immediately.
+            return;
           } else safe(()=>app && app.log && app.log('Steal failed - opponent had no cards.'));
         }
         break;

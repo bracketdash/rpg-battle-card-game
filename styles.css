@@ -70,6 +70,7 @@ body {
   height: var(--card-h);
   background: var(--card);
   border: 1px solid rgba(15, 23, 36, 0.18);
+  box-sizing: border-box;
   padding: 10px;
   border-radius: 10px;
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.06);
@@ -86,7 +87,6 @@ body {
   font-weight: 700;
   font-size: 14px;
   margin-bottom: 6px;
-  text-align: center;
 }
 
 .card-grid {
@@ -108,11 +108,14 @@ body {
   border-radius: 10px;
   box-sizing: border-box;
   background: linear-gradient(180deg, #ffffff, #fbfdff);
+  position: relative;
+  overflow: hidden;
   border: 1px solid rgba(15, 23, 36, 0.08);
 }
 .player-panel h3 {
   margin: 0 0 8px 0;
   color: #666;
+  transition: color 240ms ease, text-shadow 240ms ease;
 }
 .player-panel .characters {
   display: flex;
@@ -120,6 +123,36 @@ body {
   flex-wrap: wrap;
   align-items: flex-start;
   min-height: calc(var(--card-h) + 12px);
+}
+
+/* overlay used to smoothly fade active panel backgrounds without abrupt jumps */
+.player-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  pointer-events: none;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 320ms ease;
+  z-index: 0;
+}
+/* ensure panel contents sit above the overlay */
+.player-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.player-panel.active::after {
+  opacity: 1;
+}
+
+/* player-specific active gradients applied to the overlay so they fade */
+#player-1-panel.active::after {
+  background: linear-gradient(180deg, #d97706 0%, #92400e 100%);
+}
+#player-2-panel.active::after {
+  background: linear-gradient(180deg, #7fcf7a 0%, #2f855a 100%);
 }
 
 @media (min-width: 900px) {
@@ -133,16 +166,13 @@ body {
 
 .player-panel.active {
   transform: translateY(-3px);
-  background: linear-gradient(
-    180deg,
-    rgba(14, 165, 183, 0.98),
-    rgba(6, 182, 212, 0.94)
-  );
+  /* background handled via pseudo-element for smooth fade */
   color: #fff;
   border: 1px solid rgba(2, 6, 23, 0.12);
   box-shadow: 0 16px 44px rgba(2, 6, 23, 0.12);
 }
-.player-panel.active h3 {
+.player-panel.active h3,
+.player-panel.active h4 {
   color: #fff;
   text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.45);
 }
@@ -150,15 +180,18 @@ body {
 .player-panel.active .card.small {
   background: var(--card);
   color: #0f1724;
+  /* remove border and rely on tight shadows so cards don't rely on edges to separate from vivid panel */
+  border: none;
+  /* small, tight outer shadow for depth and a subtle light inset so white cards read on colored backgrounds */
+  box-shadow: 0 4px 8px rgba(2, 6, 23, 0.12), inset 0 1px 0 rgba(255,255,255,0.6);
+  /* (no margin compensation needed when using border-box) */
 }
 
 #player-1-panel.active {
-  background: linear-gradient(180deg, #d97706 0%, #92400e 100%);
   border-color: rgba(194, 65, 12, 0.24);
   box-shadow: 0 18px 48px rgba(194, 65, 12, 0.14);
 }
 #player-2-panel.active {
-  background: linear-gradient(180deg, #7fcf7a 0%, #2f855a 100%);
   border-color: rgba(47, 133, 90, 0.2);
   box-shadow: 0 18px 48px rgba(47, 133, 90, 0.12);
 }
@@ -172,8 +205,11 @@ body {
 .turn-controls {
   display: flex;
   gap: 8px;
-  justify-content: center;
-  margin-top: 8px;
+  /* Positioned in the lower-right corner of the player panel for the active player */
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
 }
 .turn-controls button {
   padding: 8px 10px;
@@ -190,7 +226,21 @@ body {
 }
 .play-selected {
   margin-top: 6px;
-  display: none;
+  /* Keep the button in the flow but hide it visually using opacity and pointer-events.
+     JS will toggle the `.visible` class to show it. This avoids relying on `display:none`
+     which prevented the script from showing the button via inline-style removal. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.play-selected.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .card.small.facedown {
@@ -211,33 +261,7 @@ body {
   border-radius: 8px;
 }
 
-#log-area {
-  position: relative;
-  border: 1px solid rgba(15, 23, 36, 0.16);
-  border-radius: 8px;
-  padding: 18px 12px 12px 12px;
-  margin-top: 18px;
-  background: rgba(255, 255, 255, 0.6);
-}
-#log-area h4 {
-  position: absolute;
-  left: 12px;
-  top: -10px;
-  margin: 0;
-  padding: 0 8px;
-  font-size: 13px;
-  color: var(--muted);
-  background: linear-gradient(180deg, #ffffff, #fbfdff);
-}
-#log {
-  background: transparent;
-  border: none;
-  color: rgba(27, 37, 51, 0.86);
-  padding: 0;
-  height: 220px;
-  overflow: auto;
-  font-size: 13px;
-}
+/* Log area removed — use console for logging instead */
 
 #modal:not(.hidden) {
   position: fixed;
@@ -320,13 +344,19 @@ body {
 .char-card:active {
   transform: translateY(-2px) scale(0.995);
 }
-.char-card:not(.clickable):hover {
-  transform: none;
-  box-shadow: none;
-  cursor: default;
-  filter: none;
-  border-style: solid;
-  border-color: rgba(15, 23, 36, 0.18);
+.hand-area .card.small:not(.clickable):hover,
+.hand-area .card.small:not(.clickable):focus,
+.hand-area .card.small:not(.clickable):focus-visible,
+.hand-area .card.small:not(.clickable):active {
+  /* No hover/focus/active effects for non-playable hand cards inside the hand area */
+  transform: none !important;
+  box-shadow: none !important;
+  cursor: default !important;
+  filter: none !important;
+  /* remove the real border so it can't change size — the visual edge is provided by the inset shadow */
+  border: none !important;
+  transition: none !important; /* prevent any transitions from animating */
+  outline: none !important;
 }
 .card.small.clickable:hover {
   box-shadow: 0 10px 26px rgba(14, 165, 183, 0.1);
@@ -337,8 +367,57 @@ body {
   transform: translateY(-6px);
   border-color: rgba(124, 58, 237, 0.18);
 }
-.char-card:not(.clickable):not(.selected) {
-  opacity: 0.92;
+.card.small.clickable.selected {
+  /* Match the hover lift and elevation but use a purple outer ring instead of blue.
+     This mirrors `.card.small.clickable:hover` but replaces the second shadow color. */
+  transform: translateY(-4px);
+  box-shadow: 0 10px 26px rgba(14, 165, 183, 0.1), 0 0 0 2px rgba(124, 58, 237, 0.9);
+  border-color: rgba(124, 58, 237, 0.5) !important;
+}
+
+/* Visual highlight for a newly stolen card. Applied transiently for ~250ms. */
+.card.small.stolen {
+  transform: translateY(-6px);
+  /* Use an outer box-shadow to emulate a 2px bright yellow ring without affecting layout.
+     Keep border-width unchanged to avoid layout shift; box-shadow provides the visible rim. */
+  box-shadow: 0 18px 40px rgba(250, 204, 21, 0.14), 0 0 0 2px rgba(250, 204, 21, 1);
+  /* Keep border color slightly warm so the edge reads on different backgrounds. */
+  border-color: rgba(250, 204, 21, 0.6) !important;
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+/* When a selected small card is hovered/focused/active, keep the selected purple
+   styling and use the default cursor — do not let the general clickable:hover rule
+   switch the ring to blue or change the cursor to pointer. */
+.card.small.clickable.selected:hover,
+.card.small.clickable.selected:focus,
+.card.small.clickable.selected:focus-visible,
+.card.small.clickable.selected:active {
+  cursor: default !important;
+  transform: translateY(-4px) !important;
+  box-shadow: 0 10px 26px rgba(14, 165, 183, 0.1), 0 0 0 2px rgba(124, 58, 237, 0.9) !important;
+  border-color: rgba(124, 58, 237, 0.5) !important;
+}
+.hand-area .card.small:not(.clickable):not(.selected) {
+  opacity: 0.8 !important; /* visually de-emphasize non-playable hand cards */
+  cursor: default !important;
+}
+
+/* By default, character cards inside player panels should not have hover effects
+   (e.g., during draft the player's panels show picks but they aren't interactive).
+   Only allow hover if the card has an explicit .clickable class. */
+.player-panel .char-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  /* restore the neutral border color without visual emphasis */
+  border-color: rgba(15, 23, 36, 0.18) !important;
+}
+
+.player-panel .char-card.clickable:hover {
+  /* re-enable the clickable hover treatment for actionable characters */
+  transform: translateY(-6px) !important;
+  box-shadow: 0 18px 40px rgba(14, 165, 183, 0.1) !important;
+  border-color: rgba(6, 182, 212, 0.18) !important;
 }
 
 .clickable {
@@ -350,19 +429,24 @@ body {
     transform 160ms ease,
     box-shadow 160ms ease,
     border-color 160ms ease;
+  /* Keep border width static to avoid layout shift; hover ring is done with box-shadow */
 }
 .char-card.clickable:hover,
 .card.small.clickable:hover {
   transform: translateY(-4px);
-  box-shadow: 0 10px 26px rgba(14, 165, 183, 0.1);
-  border-color: rgba(14, 165, 183, 0.12);
+  /* primary elevation shadow plus a blue ring to indicate actionability without changing layout */
+  box-shadow: 0 10px 26px rgba(14, 165, 183, 0.1),
+    0 0 0 2px rgba(59, 130, 246, 0.9);
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 body.target-mode .char-card.clickable:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 30px rgba(14, 165, 183, 0.12);
   cursor: pointer;
-  border-color: rgba(14, 165, 183, 0.18);
+  /* Match the actionable hover treatment in normal mode using a shadow ring so layout doesn't shift */
+  box-shadow: 0 12px 30px rgba(14, 165, 183, 0.12), 0 0 0 2px rgba(59, 130, 246, 0.9);
+  border-color: rgba(59,130,246,0.5);
 }
 body.target-mode .char-card.selected:hover {
   transform: translateY(-6px);
@@ -411,29 +495,39 @@ body.target-mode .card.small:hover {
   color: #fff;
 }
 
+/* Disable hover effects on character cards inside player panels unless explicitly marked clickable.
+   This prevents hover/outline/shadow changes on drafted characters shown in each player's panel. */
+.player-panel:not(.active) .char-card:not(.clickable):hover {
+  /* For inactive player panels keep the neutral border and base shadow on hover */
+  transform: none !important;
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.06) !important;
+  border: 1px solid rgba(15, 23, 36, 0.18) !important;
+}
+
+.player-panel.active .char-card:not(.clickable):hover {
+  /* For active panels (white cards on colored background) keep borderless look on hover */
+  transform: none !important;
+  box-shadow: 0 4px 8px rgba(2, 6, 23, 0.12) !important;
+  border: none !important;
+  border-width: 0 !important;
+}
+
+/* Re-enable clickable hover for actionable cards inside player panels (higher specificity) */
+.player-panel .char-card.clickable:hover {
+  transform: translateY(-6px) !important;
+  box-shadow: 0 18px 40px rgba(14, 165, 183, 0.1) !important;
+  border-color: rgba(6, 182, 212, 0.18) !important;
+}
+
 @media (min-width: 900px) {
-  #controls {
-    display: flex;
-    flex-direction: row;
-    gap: 18px;
-    align-items: flex-start;
-  }
+  /* Layout adjustments for wider screens */
   #hand-area {
     flex: 1;
-  }
-  #log-area {
-    flex: 0 0 360px;
   }
 }
 @media (max-width: 899px) {
   .players-row {
     flex-direction: column;
   }
-  #controls {
-    display: flex;
-    flex-direction: column;
-  }
-  #log {
-    height: 160px;
-  }
+  /* Small-screen layout adjustments */
 }

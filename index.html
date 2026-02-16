@@ -24,8 +24,8 @@
                 <h4>Hand</h4>
                 <div id="hand-1" class="card-grid hand"></div>
                 <div class="turn-controls">
-                  <button class="play-selected" data-player="0">Play Selected Card</button>
-                  <button class="skip-action secondary" data-player="0">Skip Action</button>
+                  <button class="play-selected" data-player="0">Play Card</button>
+                  <button class="skip-action secondary" data-player="0">Pass</button>
                 </div>
               </div>
             </div>
@@ -37,19 +37,14 @@
                 <h4>Hand</h4>
                 <div id="hand-2" class="card-grid hand"></div>
                 <div class="turn-controls">
-                  <button class="play-selected" data-player="1">Play Selected Card</button>
-                  <button class="skip-action secondary" data-player="1">Skip Action</button>
+                  <button class="play-selected" data-player="1">Play Card</button>
+                  <button class="skip-action secondary" data-player="1">Pass</button>
                 </div>
               </div>
             </div>
           </div>
 
-          <div id="controls">
-            <div id="current-turn"></div>
-            <div id="active-character">
-              Next: <span id="next-char-name">—</span>
-            </div>
-          </div>
+          <!-- top controls removed: status bar is the single source of instructions -->
         </section>
 
         <section id="draft-screen" class="screen">
@@ -58,11 +53,7 @@
           <div id="available-characters" class="card-grid"></div>
           <button id="start-game-btn" disabled>Start Game</button>
         </section>
-        <!-- Log sits below everything else -->
-        <div id="log-area">
-          <h4>Log</h4>
-          <div id="log"></div>
-        </div>
+        <!-- Log removed: using console for diagnostics now -->
       </main>
     </div>
 

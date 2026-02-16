@@ -10,6 +10,8 @@
   { name: "Sera", hp: 30, str: 1, mag: 1 },
   { name: "Sybil", hp: 23, str: 1, mag: 3 },
   { name: "Thorne", hp: 23, str: 3, mag: 1 },
+  { name: "Gideon", hp: 17, str: 4, mag: 2 },
+  { name: "Mystra", hp: 17, str: 2, mag: 4 },
   ];
 
   // Card templates and counts
@@ -171,9 +173,7 @@
   const playerPanels = [$("#player-1-panel"), $("#player-2-panel")];
   const playerCharsEl = [$("#player-1-chars"), $("#player-2-chars")];
   const handEls = [$("#hand-1"), $("#hand-2")];
-  const logEl = $("#log");
-  const currentTurnEl = $("#current-turn");
-  const nextCharEl = $("#next-char-name");
+  // `#current-turn` and `#next-char-name` are now unused; status bar is the single source of instructions
   const playButtons = Array.from(document.querySelectorAll(".play-selected"));
   const skipButtons = Array.from(document.querySelectorAll(".skip-action"));
   const statusEl = $("#status");
@@ -199,8 +199,10 @@
         nextCharIndex: 0,
         selectedCardIdx: null,
         selectedTarget: null,
-    isDraft: false,
-    statusText: '',
+  isDraft: false,
+  statusText: '',
+  gameOver: false,
+  uiLocked: false,
       };
 
   // Helpers
@@ -215,9 +217,10 @@
   }
 
   function log(msg) {
-    const el = document.createElement("div");
-    el.textContent = `[${new Date().toLocaleTimeString().slice(3)}] ${msg}`;
-    logEl.prepend(el);
+    // Log to console instead of an on-page log area. Keep a concise timestamp for readability.
+    try {
+      console.log(`[${new Date().toLocaleTimeString().slice(3)}] ${msg}`);
+    } catch (e) {}
   }
 
   function shuffle(arr) {
@@ -271,8 +274,8 @@
       state.draftPool.forEach((c, idx) => {
         const el = document.createElement("div");
         el.className = "char-card";
-        // only mark clickable if current drafter still has picks left
-        if (picksLeft > 0) {
+        // only mark clickable if current drafter still has picks left and UI is not locked
+        if (picksLeft > 0 && !state.uiLocked) {
           el.classList.add("clickable");
           el.addEventListener("click", () => pickChar(idx));
         }
@@ -298,8 +301,11 @@
         availableCharacters.innerHTML = "";
         state.draftPool.forEach((c, idx) => {
           const el = document.createElement('div');
-          el.className = 'char-card clickable';
-          el.addEventListener('click', () => pickChar(idx));
+            el.className = 'char-card';
+            if (!state.uiLocked) {
+              el.classList.add('clickable');
+              el.addEventListener('click', () => pickChar(idx));
+            }
           el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.hp} • STR ${c.str} • MAG ${c.mag}</div>`;
           availableCharacters.appendChild(el);
         });
@@ -362,30 +368,42 @@
   }
 
   function pickChar(idx) {
+    // Remove the picked character from the pool and add to the current drafter.
     const char = state.draftPool.splice(idx, 1)[0];
-    // clone
     const charInstance = Object.assign({}, char, {
       maxHP: char.hp,
       hp: char.hp,
       isKO: false,
     });
-    state.players[state.draftTurn].chars.push(charInstance);
-    // alternate
     const pickedBy = state.draftTurn;
-    state.draftTurn = 1 - state.draftTurn;
+    state.players[pickedBy].chars.push(charInstance);
+  // Immediately show the picked card in the UI (no turn switch yet)
+  // Lock UI interactions briefly so users can't click during the animation/transition
+  state.uiLocked = true;
+  saveState();
+  renderDraft();
     log(`${state.players[pickedBy].name} drafted ${charInstance.name}`);
-    // If drafting is complete, auto-start and set starting player to the last drafter
+
+    // After a short delay, either start the game if drafting finished, or switch to the next drafter.
     const totalPicked =
       state.players[0].chars.length + state.players[1].chars.length;
-    if (totalPicked >= state.draftPicksPerPlayer * 2) {
-      // last drafter is 'pickedBy'
-      // startGame will now set the starting player to that last drafter
+    setTimeout(() => {
+      // Unlock UI before handling next steps so renderers can re-enable clickability
+      state.uiLocked = false;
       saveState();
-      startGame();
-      return;
-    }
-    saveState();
-    renderDraft();
+      if (totalPicked >= state.draftPicksPerPlayer * 2) {
+        // Draft complete — start game. The last drafter (pickedBy) will be the starter.
+        // startGame reads state.draftTurn to set starting player, so set it appropriately.
+        state.draftTurn = pickedBy; // remember last drafter
+        saveState();
+        startGame();
+        return;
+      }
+      // Not finished: switch to the other drafter and re-render.
+      state.draftTurn = 1 - pickedBy;
+      saveState();
+      renderDraft();
+    }, 300);
   }
 
   // Start game after drafting
@@ -442,15 +460,31 @@
 
   // UI rendering
   function updateUI() {
-    currentTurnEl.textContent = `Current: ${state.players[state.currentPlayer].name}`;
-    renderPlayers();
-    renderHands();
-    renderNextChar();
+    // Move concise instruction into the top-right status and clear the smaller panel labels
+  renderPlayers();
+  renderHands();
+  // renderNextChar intentionally no-op now (we show actor info in the top-right status)
+  try { if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.renderNextChar === 'function') window.rpgGame.uiModule.renderNextChar(); } catch (e) {}
     evaluateSkipVisibility();
-    // show deck/discard in status
-      // prefer explicit statusText from state (restored from snapshot) when present
-      const defaultStatus = `${state.players[state.currentPlayer].name}'s turn — Deck: ${state.deck.length} Discard: ${state.discard.length}`;
-      updateStatus(state.statusText && state.statusText.length ? state.statusText : defaultStatus);
+    // prefer explicit statusText from state (restored from snapshot) when present
+    // Otherwise show a concise instruction telling the current player which character to act with.
+    let statusText = state.statusText && state.statusText.length ? state.statusText : null;
+    if (!statusText) {
+      const p = state.players[state.currentPlayer];
+      // determine next available actor
+      let idx = state.nextCharIndex;
+      while (idx < p.chars.length && (p.chars[idx].isKO || p.usedThisTurn.includes(idx))) idx++;
+      if (idx >= p.chars.length) {
+        statusText = `${p.name}: No available actors — end your turn.`;
+      } else {
+        const actorName = p.chars[idx].name;
+        statusText = `${p.name}: Choose an action for ${actorName}`;
+      }
+    }
+    updateStatus(statusText);
+  // clear the secondary next-char display (we now show it in the status)
+  // legacy DOM nodes like `#next-char-name` are optional; update them only if present
+  try { const _n = document.querySelector('#next-char-name'); if (_n) _n.textContent = ''; } catch (e) {}
     // visually mark active player panel with animation
     setActivePlayerVisual(state.currentPlayer);
     // enable/disable per-player play buttons so only the active player's control is usable
@@ -487,10 +521,16 @@
     );
     // show skip-action only for current player when they literally cannot play
     skipButtons.forEach((b) => {
-      const p = Number(b.dataset.player);
-      if (p === state.currentPlayer) b.style.display = playable ? "none" : "";
+      const playerIndex = Number(b.dataset.player);
+      if (playerIndex === state.currentPlayer) b.style.display = playable ? "none" : "";
       else b.style.display = "none";
     });
+    // If the current actor cannot play any cards, surface a clear status message
+    try {
+      if (!playable) {
+        updateStatus(`${p.name}: No actions available. Press Pass button.`);
+      }
+    } catch (e) {}
   }
 
   function isCardPlayable(card, ctx) {
@@ -621,9 +661,7 @@
         // identical between draft and game modes.
         const dp = document.querySelector('.draft-players');
         if (dp) dp.style.display = 'none';
-        // hide the top controls area
-        const controls = document.getElementById("controls");
-        if (controls) controls.style.display = "none";
+  // top controls removed from DOM; nothing to hide here
         // NOTE: do not call renderPlayers here; renderDraft will render both
         // the draft-specific lists and the shared player panels. Calling
         // renderPlayers here before renderDraft can cause ordering issues
@@ -636,8 +674,7 @@
         document.querySelectorAll(".turn-controls").forEach((el) => {
           el.style.display = "";
         });
-        const controls = document.getElementById("controls");
-        if (controls) controls.style.display = "";
+  // top controls removed from DOM; nothing to restore here
         // restore draft-specific area visibility
         const dp = document.querySelector('.draft-players');
         if (dp) dp.style.display = '';
@@ -665,9 +702,27 @@
           // face-up hand
           ce.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">${c.desc || c.name}</div>`;
           if (c.desc) ce.title = c.desc;
-          ce.addEventListener("click", () => selectCard(idx));
-          ce.classList.add("clickable");
+          // determine if this card is actually playable for current actor
+          try {
+            let actorIdx = state.nextCharIndex;
+            while (actorIdx < state.players[state.currentPlayer].chars.length && (state.players[state.currentPlayer].chars[actorIdx].isKO || state.players[state.currentPlayer].usedThisTurn.includes(actorIdx))) actorIdx++;
+            const playable = isCardPlayable(c, { player: state.currentPlayer, actorIdx });
+            if (playable && !state.uiLocked) {
+              ce.addEventListener("click", () => selectCard(idx));
+              ce.classList.add("clickable");
+            }
+          } catch (e) {
+            // if playability check fails, conservatively allow selection
+            ce.addEventListener("click", () => selectCard(idx));
+            ce.classList.add("clickable");
+          }
           if (state.selectedCardIdx === idx) ce.classList.add("selected");
+          // transient highlight for recently stolen card (set by actionsModule)
+          try {
+            if (state._stealHighlight && state._stealHighlight.player === playerIdx && state._stealHighlight.idx === idx) {
+              ce.classList.add('stolen');
+            }
+          } catch (e) {}
         } else {
           // face-down representation for opponent
           ce.classList.add("facedown");
@@ -701,11 +756,12 @@
     ) {
       idx++;
     }
+    const nextCharElLocal = typeof document !== 'undefined' ? document.querySelector('#next-char-name') : null;
     if (idx >= p.chars.length) {
-      nextCharEl.textContent = "None (all used)";
+      if (nextCharElLocal) nextCharElLocal.textContent = 'None (all used)';
       state.nextCharResolved = true;
     } else {
-      nextCharEl.textContent = `${p.chars[idx].name}`;
+      if (nextCharElLocal) nextCharElLocal.textContent = `${p.chars[idx].name}`;
       state.nextCharResolved = false;
     }
   }
@@ -714,15 +770,46 @@
   function selectCard(idx) {
     const player = state.players[state.currentPlayer];
     if (idx < 0 || idx >= player.hand.length) return;
+    // If the card is not playable for the next available actor, do nothing
+    // (no status change, no selection). This prevents Revive/Heal/etc from
+    // triggering when they have no valid targets.
+    const card = player.hand[idx];
+    try {
+      // compute next available actor index for current player
+      let actorIdx = state.nextCharIndex;
+      while (
+        actorIdx < player.chars.length &&
+        (player.chars[actorIdx].isKO || player.usedThisTurn.includes(actorIdx))
+      )
+        actorIdx++;
+      const ctx = { player: state.currentPlayer, actorIdx };
+      if (!isCardPlayable(card, ctx)) {
+        // nothing to do when card isn't playable
+        return;
+      }
+    } catch (e) {
+      // if playability check fails for any reason, fall back to allowing selection
+    }
+
     state.selectedCardIdx = idx;
     state.selectedTarget = null;
     renderHands();
-    updateStatus(
-      "Select a target if necessary, or press End Action to skip using the card.",
-    );
-    // highlight possible targets depending on card type
-    const card = player.hand[idx];
-    highlightTargets(card);
+    // Ensure the Play Card button for the active player is visible immediately
+    try {
+      document.querySelectorAll('.play-selected').forEach((b) => {
+        const pIdx = Number(b.dataset.player);
+        if (pIdx === state.currentPlayer && state.selectedCardIdx !== null) {
+          b.classList.add('visible');
+          b.disabled = false;
+        } else {
+          b.classList.remove('visible');
+          b.disabled = true;
+        }
+      });
+    } catch (e) {}
+    // Inform the player to press Play Card to execute; do not prompt for targets
+    // until the player explicitly presses Play Card.
+    updateStatus("Card selected — press Play Card to play it.");
   }
 
   function highlightTargets(card) {
@@ -845,6 +932,8 @@
         attacker.isKO = true;
         attacker.hp = 0;
         log(`${attacker.name} is KO'd by counter!`);
+        // If attacker KO'd, check for game end
+        try { checkForEliminations(); } catch (e) {}
       }
       target.counter = false;
       return;
@@ -858,6 +947,39 @@
       target.isKO = true;
       target.hp = 0;
       log(`${target.name} is KO'd!`);
+      // Check if this KO eliminated a player (end of game)
+      try { checkForEliminations(); } catch (e) {}
+    }
+  }
+
+  // Check for eliminated players and declare a winner when only one remains
+  function checkForEliminations() {
+    try {
+      if (!state || !state.players) return;
+      const aliveCounts = state.players.map((p) =>
+        (p.chars || []).filter((c) => !c.isKO).length,
+      );
+      const playersRemaining = aliveCounts.filter((n) => n > 0).length;
+      if (playersRemaining <= 1) {
+        state.gameOver = true;
+        const winnerIdx = aliveCounts.findIndex((n) => n > 0);
+        if (winnerIdx >= 0) {
+          const winner = state.players[winnerIdx];
+          updateStatus(`${winner.name} wins!`);
+          log(`${winner.name} wins the game!`);
+          // disable per-player controls
+          try {
+            document.querySelectorAll('.play-selected, .skip-action').forEach((el) => {
+              el.disabled = true;
+            });
+          } catch (e) {}
+        } else {
+          updateStatus('Game ended in a draw.');
+          log('Game ended in a draw.');
+        }
+      }
+    } catch (e) {
+      console.warn('checkForEliminations failed', e);
     }
   }
 
@@ -938,8 +1060,20 @@
   playButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       const p = Number(btn.dataset.player);
-      if (p === state.currentPlayer) resolveSelectedCard();
-      else updateStatus("Not your turn");
+      if (p !== state.currentPlayer) return updateStatus("Not your turn");
+      // If no card selected, prompt user to choose one
+      if (state.selectedCardIdx === null) return updateStatus("No card selected. Choose a card to play or press Pass.");
+      // If a card is selected but requires a target and none chosen, prompt targets first
+      const card = state.players[state.currentPlayer].hand[state.selectedCardIdx];
+      const needsTarget = ["attack", "heal", "revive", "dodge", "counter"].includes(card.type);
+      if (needsTarget && state.selectedTarget === null) {
+        // show target highlight UI and instruct the player
+        try { highlightTargets(card); } catch (e) {}
+        try { updateStatus('Select a target for the card (then press Play Card again to confirm).'); } catch (e) {}
+        return;
+      }
+      // Otherwise resolve the selected card (no further prompting needed)
+      resolveSelectedCard();
     });
   });
   skipButtons.forEach((btn) => {
