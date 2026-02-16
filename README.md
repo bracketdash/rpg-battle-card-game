@@ -1,47 +1,68 @@
-RPG Battle Card GameComponents, Setup & How To PlayCharacter Cards
+# RPG Battle Card Game
 
-These characters will be your champions in battle. Their **STR** determines how powerful their attacks are, while their **MAG** determines how powerful their healing spells are.
+A small, single-page, client-only 2-player RPG-style card battle demo.
 
-|  Name  | HP  | STR | MAG |                                                                                                                                                                                                                                Setup Details                                                                                                                                                                                                                                 |
-| :----: | :-: | :-: | :-: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-|  Vex   | 13  |  4  |  4  | To begin setting up the game, take turns drafting each of these characters. For 2-player games, each player should draft 3 characters. For 3-player games, draft 2 each, and for 4 or more players, choose 1 each. Start each character at their maximum HP by placing a marker on that cell on their card. If they would drop below 1 HP during battle, tilt their card sideways to signify that they cannot take action and cannot be healed except via the Revive action. |
-| Kalen  | 17  |  3  |  3  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-|  Anya  | 23  |  2  |  2  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-|  Sera  | 30  |  1  |  1  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Gideon | 17  |  4  |  2  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Mystra | 17  |  2  |  4  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Sybil  | 23  |  1  |  3  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Thorne | 23  |  3  |  1  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+This repository contains a lightweight browser implementation of a two-player (same-device) draft-and-battle card game. Its intended for quick playtesting: no server, no build step.
 
-Winning & Losing
+---
 
-When a character would drop below 1 HP, they are considered to have been knocked out, or KO’d. While there is a way to revive them, they cannot be healed with normal healing spells, and if all of a player’s characters are KO’d, they are out of the game. The winner is the last player with at least one character still active.On Your Turn
+## Highlights
 
-For each of your active characters, from left to right, you may have them take one action by playing a card from your hand (other than a Quick Action card, which you may use during other people’s turns). After you have exhausted your actions, you may draw back up to a 5-card hand, or draw 1. This ends your turn and it passes to the next player.Action Cards
+- Draft characters (players alternate picks).
+- Deck generation from card templates and shuffling.
+- Per-character turn flow (left-to-right). Characters can be KO'd and revived.
+- Implemented card types: Attack, Attack All, Heal, Heal All, Revive, Draw, Discard, Steal, Absorb (multi-donor), Dodge, Counter.
+- Persistence via localStorage with a small persisted undo/redo history (last 5 snapshots).
+- Pure game-core logic split (testable via Node) and a thin browser UI.
 
-These 100 cards comprise the possible actions your characters may take during battle. Once all players have completed their character draft, shuffle these and deal 5 cards to each player, then place the rest of the cards facedown as the draw deck, with space next to it for a discard pile.
+---
 
-|     Name      | Qty |                     Description                     |
-| :-----------: | :-: | :-------------------------------------------------: |
-|    Attack     | 13  |          Deal STR damage to one character.          |
-|   Attack II   | 10  |        Deal STR X 2 damage to one character.        |
-|  Attack III   |  8  |        Deal STR X 3 damage to one character.        |
-|  Attack All   |  9  |     Deal STR damage to all opposing characters.     |
-| Attack All II |  3  |   Deal STR X 2 damage to all opposing characters.   |
-|     Heal      |  5  |        Remove MAG damage from one character.        |
-|    Heal II    |  3  |      Remove MAG X 2 damage from one character.      |
-|   Heal III    |  2  |       Remove MAG X 3 damage to one character.       |
-|   Heal All    |  2  |   Remove MAG damage from all friendly characters.   |
-|  Heal All II  |  1  | Remove MAG X 2 damage from all friendly characters. |
-|    Absorb     |  4  |    Move up to MAG damage from elsewhere to self.    |
-|   Absorb II   |  3  |  Move up to MAG X 2 damage from elsewhere to self.  |
-|  Absorb III   |  2  |  Move to up MAG X 3 damage from elsewhere to self.  |
-|    Revive     |  7  |      Revive and heal a character up to MAG HP.      |
-|   Revive II   |  3  |    Revive and heal a character up to MAG X 2 HP.    |
-|    Discard    |  4  |  An opponent must discard 1 card from their hand.   |
-|  Discard II   |  2  |  An opponent must discard 2 cards from their hand.  |
-|     Draw      |  4  |          You may draw an additional card.           |
-|    Draw II    |  2  |       You may draw up to 2 additional cards.        |
-|     Steal     |  3  | Take a card, sight unseen, from an opponents hand.  |
-|     Dodge     |  7  |    Use when being attacked to take zero damage.     |
-|    Counter    |  3  |   Use when being attacked to reverse the attack.    |
+## Quick start
+
+Open `index.html` in the `rpg-battle-card-game` folder in a modern browser. No server required.
+
+Optional local server (recommended if your browser restricts file:// access):
+
+```bash
+# serve from the project folder
+python -m http.server 8000
+# then visit http://localhost:8000/rpg-battle-card-game/
+```
+
+## How to play (short)
+
+- Draft: take turns picking characters from the available pool (default 3 picks each).
+- After drafting, the deck is shuffled and each player is dealt 5 cards.
+- On your turn, each active character (left-to-right) may play one card (or skip if truly unable to play).
+- At end of turn players draw according to the rules (draw to 5 or draw 1 if they had >=5).
+
+## Controls
+
+- Play a card by selecting it and then selecting a target if required.
+- Bottom-right controls: `Undo`, `Redo`, `Reset` (Undo/Redo have keyboard shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Y).
+- Shortcut: `d` draws 1 card for the current player (debug shortcut).
+
+## Developer notes
+
+- UI files: `index.html`, `styles.css`, `app.js`
+- Pure logic: `game-core.js` (Node), `game-core-browser.js` (exposes `window.gameCore`)
+- Tests: run with Node
+
+```bash
+node test_game_core.js
+node test_absorb.js
+```
+
+## Persistence
+
+- Main snapshot key: `rpg_battle_state_v1`
+- Persisted short history: `rpg_battle_state_v1_history_v1` (keeps last 5 snapshots)
+- Undo/Redo survive reloads for those persisted steps; performing a new action after an undo clears the redo branch.
+
+## Contributing
+
+PRs welcome. Please keep the pure core logic testable and add/update tests if you change game rules.
+
+---
+
+Built for quick iteration and playtesting. If you want additional polish (animations, accessibility, more cards, or AI opponents), open an issue or send a PR.

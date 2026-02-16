@@ -1,92 +1,94 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>RPG Battle Card Game</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div id="app">
-    <header>
-      <h1>RPG Battle Card Game (2 players)</h1>
-      <div id="status"></div>
-    </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>RPG Battle Card Game</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>RPG Battle Card Game (2 players)</h1>
+        <div id="status"></div>
+      </header>
 
-    <main>
-      <section id="draft-screen" class="screen">
-        <h2>Draft Characters</h2>
-        <div id="draft-info"></div>
-        <div class="draft-players">
-          <div class="draft-panel" id="draft-player-1">
-            <h4>Player 1 Picks</h4>
-            <div id="drafted-1" class="card-grid"></div>
-          </div>
-          <div class="draft-panel" id="draft-player-2">
-            <h4>Player 2 Picks</h4>
-            <div id="drafted-2" class="card-grid"></div>
-          </div>
-        </div>
-        <div id="available-characters" class="card-grid"></div>
-        <button id="start-game-btn" disabled>Start Game</button>
-      </section>
-
-      <section id="game-screen" class="screen hidden">
-        <div class="players-row">
-          <div class="player-panel" id="player-2-panel">
-            <h3>Player 2</h3>
-            <div class="characters" id="player-2-chars"></div>
-          </div>
-
-          <div class="player-panel" id="player-1-panel">
-            <h3>Player 1</h3>
-            <div class="characters" id="player-1-chars"></div>
-          </div>
-        </div>
-
-        <div id="controls">
-          <div id="current-turn"></div>
-          <div id="active-character">Next: <span id="next-char-name">—</span></div>
-          <div id="action-area">
-            <div id="hand-area">
-              <h4>Your Hand</h4>
-              <div id="hand" class="card-grid"></div>
+      <main>
+        <section id="draft-screen" class="screen">
+          <h2>Draft Characters</h2>
+          <div id="draft-info"></div>
+          <div class="draft-players">
+            <div class="draft-panel" id="draft-player-1">
+              <h4>Player 1 Picks</h4>
+              <div id="drafted-1" class="card-grid"></div>
             </div>
-            <div id="log-area">
-              <h4>Log</h4>
-              <div id="log"></div>
+            <div class="draft-panel" id="draft-player-2">
+              <h4>Player 2 Picks</h4>
+              <div id="drafted-2" class="card-grid"></div>
+            </div>
+          </div>
+          <div id="available-characters" class="card-grid"></div>
+          <button id="start-game-btn" disabled>Start Game</button>
+        </section>
+
+        <section id="game-screen" class="screen hidden">
+          <div class="players-row">
+            <div class="player-panel" id="player-2-panel">
+              <h3>Player 2</h3>
+              <div class="characters" id="player-2-chars"></div>
+            </div>
+
+            <div class="player-panel" id="player-1-panel">
+              <h3>Player 1</h3>
+              <div class="characters" id="player-1-chars"></div>
             </div>
           </div>
 
-          <div class="turn-controls">
-            <button id="play-selected">Play Selected Card</button>
-            <button id="skip-action" class="secondary">Skip Action</button>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
+          <div id="controls">
+            <div id="current-turn"></div>
+            <div id="active-character">
+              Next: <span id="next-char-name">—</span>
+            </div>
+            <div id="action-area">
+              <div id="hand-area">
+                <h4>Your Hand</h4>
+                <div id="hand" class="card-grid"></div>
+              </div>
+              <div id="log-area">
+                <h4>Log</h4>
+                <div id="log"></div>
+              </div>
+            </div>
 
-  <!-- Modal for multi-step actions (Absorb) -->
-  <div id="modal" class="hidden">
-    <div id="modal-inner">
-      <h3 id="modal-title">Modal</h3>
-      <div id="modal-body"></div>
-      <div id="modal-actions">
-        <button id="modal-confirm">Confirm</button>
-        <button id="modal-cancel" class="secondary">Cancel</button>
+            <div class="turn-controls">
+              <button id="play-selected">Play Selected Card</button>
+              <button id="skip-action" class="secondary">Skip Action</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Modal for multi-step actions (Absorb) -->
+    <div id="modal" class="hidden">
+      <div id="modal-inner">
+        <h3 id="modal-title">Modal</h3>
+        <div id="modal-body"></div>
+        <div id="modal-actions">
+          <button id="modal-confirm">Confirm</button>
+          <button id="modal-cancel" class="secondary">Cancel</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Floating actions (Undo / Redo / Reset) -->
-  <div id="floating-actions" aria-hidden="false">
-    <button id="undo-btn" title="Undo (Ctrl+Z)">Undo</button>
-    <button id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
-    <button id="reset-btn" title="Reset saved game">Reset</button>
-  </div>
+    <!-- Floating actions (Undo / Redo / Reset) -->
+    <div id="floating-actions" aria-hidden="false">
+      <button id="undo-btn" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
+      <button id="reset-btn" title="Reset saved game">Reset</button>
+    </div>
 
-  <script src="game-core-browser.js"></script>
-  <script src="app.js"></script>
-</body>
+    <script src="game-core-browser.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>
