@@ -173,12 +173,12 @@
   const gameScreen = $("#game-screen");
   const playerPanels = [$("#player-1-panel"), $("#player-2-panel")];
   const playerCharsEl = [$("#player-1-chars"), $("#player-2-chars")];
-  const handEl = $("#hand");
+  const handEls = [$("#hand-1"), $("#hand-2")];
   const logEl = $("#log");
   const currentTurnEl = $("#current-turn");
   const nextCharEl = $("#next-char-name");
-  const playSelectedBtn = $("#play-selected");
-  const skipActionBtn = $("#skip-action");
+  const playButtons = Array.from(document.querySelectorAll(".play-selected"));
+  const skipButtons = Array.from(document.querySelectorAll(".skip-action"));
   const statusEl = $("#status");
 
   // Persistence keys and history (declared early so init can call loadState/saveState)
@@ -283,6 +283,27 @@
       el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
       drafted2.appendChild(el);
     });
+    // Also populate the main player character containers so their positions don't jump when switching to game view
+    try {
+      if (playerCharsEl[0]) {
+        playerCharsEl[0].innerHTML = "";
+        state.players[0].chars.forEach((c) => {
+          const el = document.createElement("div");
+          el.className = "char-card";
+          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
+          playerCharsEl[0].appendChild(el);
+        });
+      }
+      if (playerCharsEl[1]) {
+        playerCharsEl[1].innerHTML = "";
+        state.players[1].chars.forEach((c) => {
+          const el = document.createElement("div");
+          el.className = "char-card";
+          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
+          playerCharsEl[1].appendChild(el);
+        });
+      }
+    } catch (e) {}
     const totalPicked =
       state.players[0].chars.length + state.players[1].chars.length;
     // hide start button during active drafting; only enable/show when ready
@@ -372,8 +393,8 @@
   // UI rendering
   function updateUI() {
     currentTurnEl.textContent = `Current: ${state.players[state.currentPlayer].name}`;
-    renderPlayers();
-    renderHand();
+  renderPlayers();
+  renderHands();
     renderNextChar();
     evaluateSkipVisibility();
     // show deck/discard in status
@@ -382,6 +403,12 @@
     );
     // visually mark active player panel with animation
     setActivePlayerVisual(state.currentPlayer);
+    // enable/disable per-player play buttons so only the active player's control is usable
+    playButtons.forEach((b) => {
+      try {
+        b.disabled = Number(b.dataset.player) !== state.currentPlayer;
+      } catch (e) {}
+    });
   }
 
   // Determine whether the Skip Action button should be visible: only when the current actor
@@ -397,15 +424,20 @@
       idx++;
     const actor = p.chars[idx];
     if (!actor) {
-      skipActionBtn.style.display = "none";
+      // hide skip buttons for both players
+      skipButtons.forEach((b) => (b.style.display = "none"));
       return;
     }
     // if any card in hand is playable for this actor, hide skip
     const playable = p.hand.some((card) =>
       isCardPlayable(card, { player: state.currentPlayer, actorIdx: idx }),
     );
-    if (playable) skipActionBtn.style.display = "none";
-    else skipActionBtn.style.display = "";
+    // show skip-action only for current player when they literally cannot play
+    skipButtons.forEach((b) => {
+      const p = Number(b.dataset.player);
+      if (p === state.currentPlayer) b.style.display = playable ? "none" : "";
+      else b.style.display = "none";
+    });
   }
 
   function isCardPlayable(card, ctx) {
@@ -487,30 +519,55 @@
           state.players[i].usedThisTurn.includes(idx)
             ? '<span class="flag-badge">USED</span>'
             : "";
+        // calculate HP percentage for the visual HP bar
+        const hpPercent = Math.max(
+          0,
+          Math.round(((c.hp || 0) / (c.maxHP || 1)) * 100),
+        );
         ce.innerHTML =
           `<div class="name">${c.name}${c.isKO ? '<span class="ko-badge">KO</span>' : ""}${usedBadge}</div>
-          <div class="hp">HP: ${c.hp}/${c.maxHP}</div>
+          <div class="hp">
+            <div class="hp-text">HP: ${c.hp}/${c.maxHP}</div>
+            <div class="hp-bar"><div class="hp-fill" style="width:${hpPercent}%;"></div></div>
+          </div>
           <div class="small-meta">STR ${c.str} • MAG ${c.mag}` +
           `${c.dodge ? '<span class="flag-badge">DODGE</span>' : ""}${c.counter ? '<span class="flag-badge">COUNTER</span>' : ""}</div>`;
         el.appendChild(ce);
       });
     }
   }
-
-  function renderHand() {
-    const player = state.players[state.currentPlayer];
-    handEl.innerHTML = "";
-    player.hand.forEach((c, idx) => {
-      const ce = document.createElement("div");
-      ce.className = "card small";
-      ce.dataset.idx = idx;
-      ce.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">${c.desc || c.name}</div>`;
-      // tooltip/title shows full description
-      if (c.desc) ce.title = c.desc;
-      ce.addEventListener("click", () => selectCard(idx));
-      if (state.selectedCardIdx === idx) ce.classList.add("selected");
-      handEl.appendChild(ce);
+  function renderHands() {
+    // Render both players' hands. The active player's hand is face-up; the other player's is face-down.
+    handEls.forEach((container, playerIdx) => {
+      if (!container) return;
+      container.innerHTML = "";
+      const hand = state.players[playerIdx].hand || [];
+      hand.forEach((c, idx) => {
+        const ce = document.createElement("div");
+        ce.className = "card small";
+        ce.dataset.idx = idx;
+        if (playerIdx === state.currentPlayer) {
+          // face-up hand
+          ce.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">${c.desc || c.name}</div>`;
+          if (c.desc) ce.title = c.desc;
+          ce.addEventListener("click", () => selectCard(idx));
+          if (state.selectedCardIdx === idx) ce.classList.add("selected");
+        } else {
+          // face-down representation for opponent
+          ce.classList.add("facedown");
+          ce.innerHTML = `<div class="back-face">&nbsp;</div>`;
+        }
+        container.appendChild(ce);
+      });
     });
+
+    // ensure target-mode removed when no card selected
+    if (state.selectedCardIdx === null) document.body.classList.remove("target-mode");
+    else {
+      // highlight targets for the selected card
+      const card = state.players[state.currentPlayer].hand[state.selectedCardIdx];
+      if (card) highlightTargets(card);
+    }
   }
 
   function renderNextChar() {
@@ -536,9 +593,9 @@
   function selectCard(idx) {
     const player = state.players[state.currentPlayer];
     if (idx < 0 || idx >= player.hand.length) return;
-    state.selectedCardIdx = idx;
-    state.selectedTarget = null;
-    renderHand();
+  state.selectedCardIdx = idx;
+  state.selectedTarget = null;
+  renderHands();
     updateStatus(
       "Select a target if necessary, or press End Action to skip using the card.",
     );
@@ -548,7 +605,8 @@
   }
 
   function highlightTargets(card) {
-    // remove previous click handlers
+    // remove previous click handlers and clear any target-mode
+    let hasTargets = false;
     playerCharsEl.forEach((el) => {
       Array.from(el.children).forEach((ch) => {
         ch.classList.remove("selected");
@@ -568,8 +626,8 @@
         targetPanel.querySelectorAll(".char-card").forEach((el, i) => {
           el.classList.toggle("selected", !opp.chars[i].isKO);
           if (!opp.chars[i].isKO)
-            el.onclick = () =>
-              selectTarget({ side: 1 - state.currentPlayer, idx: i });
+            el.onclick = () => selectTarget({ side: 1 - state.currentPlayer, idx: i });
+          if (!opp.chars[i].isKO) hasTargets = true;
         });
         updateStatus("Click an opposing character to target.");
       }
@@ -586,6 +644,7 @@
           !current.chars[i].isKO || card.type === "revive",
         );
         el.onclick = () => selectTarget({ side: state.currentPlayer, idx: i });
+        if (!current.chars[i].isKO || card.type === "revive") hasTargets = true;
       });
       updateStatus(
         "Click a friendly character to target (or End Action to skip).",
@@ -593,6 +652,10 @@
     } else {
       updateStatus("Card selected — press End Action to play it (or Pass).");
     }
+
+    // Toggle target-mode class so hover effects and focus only appear when selecting targets
+    if (hasTargets) document.body.classList.add("target-mode");
+    else document.body.classList.remove("target-mode");
   }
 
   function selectTarget(t) {
@@ -919,13 +982,22 @@
 
   // Button handlers
   startGameBtn.addEventListener("click", startGame);
-  playSelectedBtn.addEventListener("click", () => {
-    resolveSelectedCard();
+  // per-player play/skip buttons
+  playButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = Number(btn.dataset.player);
+      if (p === state.currentPlayer) resolveSelectedCard();
+      else updateStatus("Not your turn");
+    });
   });
-  skipActionBtn.addEventListener("click", () => {
-    // player chooses to skip this actor's action
-    log(`${state.players[state.currentPlayer].name} skipped an action.`);
-    markCharUsed();
+  skipButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = Number(btn.dataset.player);
+      if (p === state.currentPlayer) {
+        log(`${state.players[state.currentPlayer].name} skipped an action.`);
+        markCharUsed();
+      } else updateStatus("Not your turn");
+    });
   });
 
   // Expose basic keyboard shortcuts for convenience

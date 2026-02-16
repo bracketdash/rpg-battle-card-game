@@ -2,7 +2,7 @@
 
 A small, single-page, client-only 2-player RPG-style card battle demo.
 
-This repository contains a lightweight browser implementation of a two-player (same-device) draft-and-battle card game. Its intended for quick playtesting: no server, no build step.
+This repository contains a lightweight browser implementation of a two-player (same-device) draft-and-battle card game. It's intended for quick playtesting: no server, no build step.
 
 ---
 
