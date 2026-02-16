@@ -7,11 +7,9 @@
     { name: "Vex", hp: 13, str: 4, mag: 4 },
     { name: "Kalen", hp: 17, str: 3, mag: 3 },
     { name: "Anya", hp: 23, str: 2, mag: 2 },
-    { name: "Sera", hp: 30, str: 1, mag: 1 },
-    { name: "Gideon", hp: 17, str: 4, mag: 2 },
-    { name: "Mystra", hp: 17, str: 2, mag: 4 },
-    { name: "Sybil", hp: 23, str: 1, mag: 3 },
-    { name: "Thorne", hp: 23, str: 3, mag: 1 },
+  { name: "Sera", hp: 30, str: 1, mag: 1 },
+  { name: "Sybil", hp: 23, str: 1, mag: 3 },
+  { name: "Thorne", hp: 23, str: 3, mag: 1 },
   ];
 
   // Card templates and counts
@@ -166,7 +164,6 @@
 
   const draftScreen = $("#draft-screen");
   const availableCharacters = $("#available-characters");
-  const draftInfo = $("#draft-info");
   const undoBtn = $("#undo-btn");
   const redoBtn = $("#redo-btn");
   const startGameBtn = $("#start-game-btn");
@@ -181,29 +178,30 @@
   const skipButtons = Array.from(document.querySelectorAll(".skip-action"));
   const statusEl = $("#status");
 
-  // Persistence keys and history (declared early so init can call loadState/saveState)
-  const STORAGE_KEY = "rpg_battle_state_v1";
-  const STORAGE_KEY_HISTORY = STORAGE_KEY + "_history_v1";
-  const PERSIST_HISTORY_LIMIT = 5; // how many snapshots to keep in localStorage
-  // Undo / Redo history (in-memory)
-  const HISTORY_LIMIT = 200;
-  let history = [];
-  let redoStack = [];
+  // Use extracted state/persistence module when available. This keeps
+  // `app.js` lightweight and lets us refactor persistence separately.
+  const stateModule =
+    typeof window !== "undefined" && window.rpgGame && window.rpgGame.stateModule
+      ? window.rpgGame.stateModule
+      : null;
 
-  // Game state
-  const state = {
-    players: [createEmptyPlayer(1), createEmptyPlayer(2)],
-    draftPool: [],
-    draftTurn: 0, // 0 or 1, who picks next in draft
-    draftPicksPerPlayer: 3,
-    deck: [],
-    discard: [],
-    currentPlayer: 0,
-    // per-turn: index of next character to act for the current player
-    nextCharIndex: 0,
-    selectedCardIdx: null,
-    selectedTarget: null,
-  };
+  // Game state reference (either from the module or a local fallback)
+  const state = stateModule
+    ? stateModule.state
+    : {
+        players: [createEmptyPlayer(1), createEmptyPlayer(2)],
+        draftPool: [],
+        draftTurn: 0,
+        draftPicksPerPlayer: 3,
+        deck: [],
+        discard: [],
+        currentPlayer: 0,
+        nextCharIndex: 0,
+        selectedCardIdx: null,
+        selectedTarget: null,
+    isDraft: false,
+    statusText: '',
+      };
 
   // Helpers
   function createEmptyPlayer(num) {
@@ -243,45 +241,92 @@
   function startDraft() {
     state.draftPool = CHAR_TEMPLATES.map((c) => Object.assign({}, c));
     state.draftTurn = 0; // player 1 picks first
+    // Ensure player panels are visible while drafting but hide hand areas
+    setDraftModeUI(true);
     renderDraft();
-    updateStatus("Drafting: Player 1 picks first; pick 3 each");
   }
 
   function renderDraft() {
-    availableCharacters.innerHTML = "";
-    // how many picks this player has left
-    const picksLeftRaw =
-      state.draftPicksPerPlayer - state.players[state.draftTurn].chars.length;
-    const picksLeft = Math.max(0, picksLeftRaw);
-    state.draftPool.forEach((c, idx) => {
-      const el = document.createElement("div");
-      el.className = "char-card";
-      // only mark clickable if current drafter still has picks left
-      if (picksLeft > 0) {
-        el.classList.add("clickable");
-        el.addEventListener("click", () => pickChar(idx));
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.renderDraft === 'function') {
+      return window.rpgGame.uiModule.renderDraft();
+    }
+    let picksLeft = 0;
+    try {
+      // Defensive: ensure draftPool exists (helps when reloads leave state empty)
+      if (!state.draftPool || !state.draftPool.length) {
+        state.draftPool = CHAR_TEMPLATES.map((c) => Object.assign({}, c));
+        state.draftTurn = 0;
       }
-      el.innerHTML = `<div class="name">${c.name}</div>
-      <div class="small-meta">HP ${c.hp} • STR ${c.str} • MAG ${c.mag}</div>`;
-      availableCharacters.appendChild(el);
-    });
-    draftInfo.textContent = `${state.players[state.draftTurn].name}, pick a character (${picksLeft} picks left)`;
-    // render drafted lists
+      // ensure the available characters area is visible
+      try {
+        // force the available pool to use the same flex layout as other grids
+        availableCharacters.style.display = "flex";
+        availableCharacters.style.flexWrap = "wrap";
+      } catch (e) {}
+      availableCharacters.innerHTML = "";
+      // how many picks this player has left
+      const picksLeftRaw =
+        state.draftPicksPerPlayer - state.players[state.draftTurn].chars.length;
+      picksLeft = Math.max(0, picksLeftRaw);
+      state.draftPool.forEach((c, idx) => {
+        const el = document.createElement("div");
+        el.className = "char-card";
+        // only mark clickable if current drafter still has picks left
+        if (picksLeft > 0) {
+          el.classList.add("clickable");
+          el.addEventListener("click", () => pickChar(idx));
+        }
+        el.innerHTML = `<div class="name">${c.name}</div>
+        <div class="small-meta">HP ${c.hp} • STR ${c.str} • MAG ${c.mag}</div>`;
+        availableCharacters.appendChild(el);
+      });
+      // Ensure player panels are visible (in case some earlier step hid them)
+      try {
+        document.querySelectorAll('.player-panel').forEach((pp) => {
+          pp.style.display = '';
+        });
+      } catch (e) {}
+      // Debug output to console to help trace initialization issues
+      try {
+        console.debug('renderDraft: draftPool=', state.draftPool.length, 'draftTurn=', state.draftTurn, 'picksP0=', state.players[0].chars.length, 'picksP1=', state.players[1].chars.length);
+      } catch (e) {}
+    } catch (err) {
+      console.error('renderDraft failed', err);
+      // fallback: attempt a minimal repopulation so the user can still pick
+      try {
+        state.draftPool = CHAR_TEMPLATES.map((c) => Object.assign({}, c));
+        availableCharacters.innerHTML = "";
+        state.draftPool.forEach((c, idx) => {
+          const el = document.createElement('div');
+          el.className = 'char-card clickable';
+          el.addEventListener('click', () => pickChar(idx));
+          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.hp} • STR ${c.str} • MAG ${c.mag}</div>`;
+          availableCharacters.appendChild(el);
+        });
+      } catch (e) {
+        console.error('renderDraft fallback failed', e);
+      }
+    }
+  if (statusEl) statusEl.textContent = `${state.players[state.draftTurn].name}, pick a character (${picksLeft} picks left)`;
+    // Also populate the draft-specific pick lists so users who are looking
+    // at the Draft screen see the picks in the familiar place. We still
+    // populate the main player character panels so the DOM remains
+    // consistent into game mode.
     const drafted1 = $("#drafted-1");
     const drafted2 = $("#drafted-2");
-    drafted1.innerHTML = "";
-    drafted2.innerHTML = "";
+    if (drafted1) drafted1.innerHTML = "";
+    if (drafted2) drafted2.innerHTML = "";
     state.players[0].chars.forEach((c) => {
       const el = document.createElement("div");
       el.className = "char-card";
-      el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
-      drafted1.appendChild(el);
+      el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP} • STR ${c.str} • MAG ${c.mag}</div>`;
+      if (drafted1) drafted1.appendChild(el);
     });
     state.players[1].chars.forEach((c) => {
       const el = document.createElement("div");
       el.className = "char-card";
-      el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
-      drafted2.appendChild(el);
+      el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP} • STR ${c.str} • MAG ${c.mag}</div>`;
+      if (drafted2) drafted2.appendChild(el);
     });
     // Also populate the main player character containers so their positions don't jump when switching to game view
     try {
@@ -290,7 +335,7 @@
         state.players[0].chars.forEach((c) => {
           const el = document.createElement("div");
           el.className = "char-card";
-          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
+          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP} • STR ${c.str} • MAG ${c.mag}</div>`;
           playerCharsEl[0].appendChild(el);
         });
       }
@@ -299,7 +344,7 @@
         state.players[1].chars.forEach((c) => {
           const el = document.createElement("div");
           el.className = "char-card";
-          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP}</div>`;
+          el.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">HP ${c.maxHP} • STR ${c.str} • MAG ${c.mag}</div>`;
           playerCharsEl[1].appendChild(el);
         });
       }
@@ -366,7 +411,9 @@
     state.currentPlayer =
       typeof state.draftTurn === "number" ? 1 - state.draftTurn : 0;
     state.nextCharIndex = 0;
+    // exit draft-mode UI and show hands/controls
     draftScreen.classList.add("hidden");
+    setDraftModeUI(false);
     gameScreen.classList.remove("hidden");
     updateUI();
     log("Game started. Deck shuffled and 5 cards dealt each.");
@@ -388,19 +435,22 @@
 
   function updateStatus(text) {
     statusEl.textContent = text;
+      try {
+        if (state) state.statusText = text;
+      } catch (e) {}
   }
 
   // UI rendering
   function updateUI() {
     currentTurnEl.textContent = `Current: ${state.players[state.currentPlayer].name}`;
-  renderPlayers();
-  renderHands();
+    renderPlayers();
+    renderHands();
     renderNextChar();
     evaluateSkipVisibility();
     // show deck/discard in status
-    updateStatus(
-      `${state.players[state.currentPlayer].name}'s turn — Deck: ${state.deck.length} Discard: ${state.discard.length}`,
-    );
+      // prefer explicit statusText from state (restored from snapshot) when present
+      const defaultStatus = `${state.players[state.currentPlayer].name}'s turn — Deck: ${state.deck.length} Discard: ${state.discard.length}`;
+      updateStatus(state.statusText && state.statusText.length ? state.statusText : defaultStatus);
     // visually mark active player panel with animation
     setActivePlayerVisual(state.currentPlayer);
     // enable/disable per-player play buttons so only the active player's control is usable
@@ -414,6 +464,9 @@
   // Determine whether the Skip Action button should be visible: only when the current actor
   // has no playable cards for this actor. Otherwise hide it.
   function evaluateSkipVisibility() {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.evaluateSkipVisibility === 'function') {
+      return window.rpgGame.uiModule.evaluateSkipVisibility();
+    }
     const p = state.players[state.currentPlayer];
     // find current actor index
     let idx = state.nextCharIndex;
@@ -475,6 +528,9 @@
   }
 
   function setActivePlayerVisual(idx) {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.setActivePlayerVisual === 'function') {
+      return window.rpgGame.uiModule.setActivePlayerVisual(idx);
+    }
     // remove active from both then add
     playerPanels.forEach((el, i) => {
       el.classList.remove("active");
@@ -489,6 +545,9 @@
   }
 
   function renderPlayers() {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.renderPlayers === 'function') {
+      return window.rpgGame.uiModule.renderPlayers();
+    }
     for (let i = 0; i < 2; i++) {
       const p = state.players[i];
       const el = playerCharsEl[i];
@@ -536,7 +595,63 @@
       });
     }
   }
+  
+  // Toggle UI when in draft mode vs game mode. During draft mode we keep the
+  // main player panels visible (so drafted characters appear in-place) but
+  // hide hand areas and turn controls. When exiting draft mode we restore
+  // visibility of hands/controls.
+  function setDraftModeUI(isDraft) {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.setDraftModeUI === 'function') {
+      return window.rpgGame.uiModule.setDraftModeUI(isDraft);
+    }
+    try {
+      if (isDraft) {
+        // show draft screen and keep game panels visible
+        draftScreen.classList.remove("hidden");
+        gameScreen.classList.remove("hidden");
+        // hide the hand areas and per-player turn controls
+        document.querySelectorAll(".hand-area").forEach((el) => {
+          el.style.display = "none";
+        });
+        document.querySelectorAll(".turn-controls").forEach((el) => {
+          el.style.display = "none";
+        });
+        // hide the draft-specific stacked player panels so we only show the
+        // shared player panels (which we populate) — this keeps layout
+        // identical between draft and game modes.
+        const dp = document.querySelector('.draft-players');
+        if (dp) dp.style.display = 'none';
+        // hide the top controls area
+        const controls = document.getElementById("controls");
+        if (controls) controls.style.display = "none";
+        // NOTE: do not call renderPlayers here; renderDraft will render both
+        // the draft-specific lists and the shared player panels. Calling
+        // renderPlayers here before renderDraft can cause ordering issues
+        // during initialization.
+      } else {
+        // restore hands and controls
+        document.querySelectorAll(".hand-area").forEach((el) => {
+          el.style.display = "";
+        });
+        document.querySelectorAll(".turn-controls").forEach((el) => {
+          el.style.display = "";
+        });
+        const controls = document.getElementById("controls");
+        if (controls) controls.style.display = "";
+        // restore draft-specific area visibility
+        const dp = document.querySelector('.draft-players');
+        if (dp) dp.style.display = '';
+        draftScreen.classList.add("hidden");
+        gameScreen.classList.remove("hidden");
+      }
+    } catch (e) {
+      console.warn("setDraftModeUI failed", e);
+    }
+  }
   function renderHands() {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.renderHands === 'function') {
+      return window.rpgGame.uiModule.renderHands();
+    }
     // Render both players' hands. The active player's hand is face-up; the other player's is face-down.
     handEls.forEach((container, playerIdx) => {
       if (!container) return;
@@ -551,6 +666,7 @@
           ce.innerHTML = `<div class="name">${c.name}</div><div class="small-meta">${c.desc || c.name}</div>`;
           if (c.desc) ce.title = c.desc;
           ce.addEventListener("click", () => selectCard(idx));
+          ce.classList.add("clickable");
           if (state.selectedCardIdx === idx) ce.classList.add("selected");
         } else {
           // face-down representation for opponent
@@ -562,15 +678,20 @@
     });
 
     // ensure target-mode removed when no card selected
-    if (state.selectedCardIdx === null) document.body.classList.remove("target-mode");
+    if (state.selectedCardIdx === null)
+      document.body.classList.remove("target-mode");
     else {
       // highlight targets for the selected card
-      const card = state.players[state.currentPlayer].hand[state.selectedCardIdx];
+      const card =
+        state.players[state.currentPlayer].hand[state.selectedCardIdx];
       if (card) highlightTargets(card);
     }
   }
 
   function renderNextChar() {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.renderNextChar === 'function') {
+      return window.rpgGame.uiModule.renderNextChar();
+    }
     const p = state.players[state.currentPlayer];
     // find next non-KO character not acted yet this turn
     let idx = state.nextCharIndex;
@@ -593,9 +714,9 @@
   function selectCard(idx) {
     const player = state.players[state.currentPlayer];
     if (idx < 0 || idx >= player.hand.length) return;
-  state.selectedCardIdx = idx;
-  state.selectedTarget = null;
-  renderHands();
+    state.selectedCardIdx = idx;
+    state.selectedTarget = null;
+    renderHands();
     updateStatus(
       "Select a target if necessary, or press End Action to skip using the card.",
     );
@@ -605,6 +726,9 @@
   }
 
   function highlightTargets(card) {
+    if (typeof window !== 'undefined' && window.rpgGame && window.rpgGame.uiModule && typeof window.rpgGame.uiModule.highlightTargets === 'function') {
+      return window.rpgGame.uiModule.highlightTargets(card);
+    }
     // remove previous click handlers and clear any target-mode
     let hasTargets = false;
     playerCharsEl.forEach((el) => {
@@ -624,10 +748,17 @@
       else {
         const targetPanel = playerCharsEl[1 - state.currentPlayer];
         targetPanel.querySelectorAll(".char-card").forEach((el, i) => {
-          el.classList.toggle("selected", !opp.chars[i].isKO);
-          if (!opp.chars[i].isKO)
-            el.onclick = () => selectTarget({ side: 1 - state.currentPlayer, idx: i });
-          if (!opp.chars[i].isKO) hasTargets = true;
+          const canTarget = !opp.chars[i].isKO;
+          el.classList.toggle("selected", canTarget);
+          if (canTarget) {
+            el.onclick = () =>
+              selectTarget({ side: 1 - state.currentPlayer, idx: i });
+            el.classList.add("clickable");
+            hasTargets = true;
+          } else {
+            el.onclick = null;
+            el.classList.remove("clickable");
+          }
         });
         updateStatus("Click an opposing character to target.");
       }
@@ -639,12 +770,17 @@
       // target own characters
       const targetPanel = playerCharsEl[state.currentPlayer];
       targetPanel.querySelectorAll(".char-card").forEach((el, i) => {
-        el.classList.toggle(
-          "selected",
-          !current.chars[i].isKO || card.type === "revive",
-        );
-        el.onclick = () => selectTarget({ side: state.currentPlayer, idx: i });
-        if (!current.chars[i].isKO || card.type === "revive") hasTargets = true;
+        const canTarget = !current.chars[i].isKO || card.type === "revive";
+        el.classList.toggle("selected", canTarget);
+        if (canTarget) {
+          el.onclick = () =>
+            selectTarget({ side: state.currentPlayer, idx: i });
+          el.classList.add("clickable");
+          hasTargets = true;
+        } else {
+          el.onclick = null;
+          el.classList.remove("clickable");
+        }
       });
       updateStatus(
         "Click a friendly character to target (or End Action to skip).",
@@ -663,213 +799,18 @@
     updateStatus(`Target selected: ${state.players[t.side].chars[t.idx].name}`);
   }
 
-  // Action resolution
+  // Action resolution delegated to actionsModule when present (extracted to app-actions.js)
   function resolveSelectedCard() {
-    const p = state.players[state.currentPlayer];
-    const cardIdx = state.selectedCardIdx;
-    if (cardIdx === null) {
-      updateStatus(
-        "No card selected. Choose a card to play or press Skip Action to pass.",
-      );
-      return;
+    if (window.rpgGame && window.rpgGame.actionsModule && typeof window.rpgGame.actionsModule.resolveSelectedCard === 'function') {
+      return window.rpgGame.actionsModule.resolveSelectedCard();
     }
-    // ensure there is an available actor
-    const actor = getCurrentActor();
-    if (!actor || actor.name === "(no actor)") {
-      updateStatus(
-        "No available actor to perform actions; end your turn or pass.",
-      );
-      return;
-    }
-    const card = p.hand[cardIdx];
-    // apply effects
-    switch (card.type) {
-      case "absorb":
-        // open modal to let player pick donors and amounts
-        openAbsorbModal(card, p, cardIdx);
-        return; // modal will continue flow and discard card when confirming
-      case "dodge":
-        if (!state.selectedTarget) {
-          updateStatus("Select a friendly character to place Dodge on.");
-          return;
-        }
-        const dTarget =
-          state.players[state.selectedTarget.side].chars[
-            state.selectedTarget.idx
-          ];
-        dTarget.dodge = true;
-        log(
-          `${p.name} placed DODGE on ${dTarget.name}. It will cancel the next incoming attack.`,
-        );
-        break;
-      case "counter":
-        if (!state.selectedTarget) {
-          updateStatus("Select a friendly character to place Counter on.");
-          return;
-        }
-        const cTarget =
-          state.players[state.selectedTarget.side].chars[
-            state.selectedTarget.idx
-          ];
-        cTarget.counter = true;
-        log(
-          `${p.name} placed COUNTER on ${cTarget.name}. It will reflect the next incoming attack back.`,
-        );
-        break;
-      case "attack":
-        if (!state.selectedTarget) {
-          updateStatus("Select a target to attack.");
-          return;
-        }
-        const target =
-          state.players[state.selectedTarget.side].chars[
-            state.selectedTarget.idx
-          ];
-        const attacker = getCurrentActor();
-        // use pure core function and apply results
-        const res = window.gameCore.attack(attacker, target, card.mult || 1);
-        // apply target changes
-        target.hp = res.target.hp;
-        target.isKO = !!res.target.isKO;
-        if (res.result === "dodged")
-          log(
-            `${attacker.name} uses ${card.name} — ${target.name} dodged the attack!`,
-          );
-        else if (res.result === "countered") {
-          // apply attacker changes
-          attacker.hp = res.attacker.hp;
-          attacker.isKO = !!res.attacker.isKO;
-          log(
-            `${attacker.name} uses ${card.name} — ${target.name} countered! ${attacker.name} takes ${attacker.maxHP - attacker.hp} damage.`,
-          );
-        } else {
-          const dmg = (attacker.str || 0) * (card.mult || 1);
-          log(
-            `${attacker.name} uses ${card.name} — ${dmg} damage to ${target.name} (HP ${Math.max(0, target.hp)}/${target.maxHP})`,
-          );
-        }
-        break;
-      case "attackAll":
-        const opp = state.players[1 - state.currentPlayer];
-        const actor = getCurrentActor();
-        const results = window.gameCore.attackAll(
-          actor,
-          opp.chars,
-          card.mult || 1,
-        );
-        results.forEach((r, i) => {
-          const ch = opp.chars[i];
-          ch.hp = r.target.hp;
-          ch.isKO = !!r.target.isKO;
-          if (r.result === "dodged")
-            log(`${actor.name} uses ${card.name} — ${ch.name} dodged.`);
-          else if (r.result === "countered") {
-            actor.hp = r.attacker.hp;
-            actor.isKO = !!r.attacker.isKO;
-            log(`${ch.name} countered — ${actor.name} took damage.`);
-          } else
-            log(
-              `${actor.name} uses ${card.name} — ${actor.str * (card.mult || 1)} to ${ch.name} (HP ${ch.hp}/${ch.maxHP})`,
-            );
-        });
-        break;
-      case "heal":
-        if (!state.selectedTarget) {
-          updateStatus("Select a friendly target to heal.");
-          return;
-        }
-        const targetH =
-          state.players[state.selectedTarget.side].chars[
-            state.selectedTarget.idx
-          ];
-        const healer = getCurrentActor();
-        const healAmt = healer.mag * (card.mult || 1);
-        const resH = window.gameCore.applyHeal(targetH, healAmt);
-        targetH.hp = resH.target.hp;
-        targetH.isKO = !!resH.target.isKO;
-        log(
-          `${healer.name} uses ${card.name} — healed ${targetH.name} ${resH.healed || 0} (HP ${targetH.hp}/${targetH.maxHP})`,
-        );
-        break;
-      case "healAll":
-        const team = state.players[state.currentPlayer];
-        const healerA = getCurrentActor();
-        const healResults = window.gameCore.healAll(
-          healerA,
-          team.chars,
-          card.mult || 1,
-        );
-        healResults.forEach((r, i) => {
-          if (!team.chars[i].isKO) {
-            team.chars[i].hp = r.target.hp;
-            log(
-              `${healerA.name} heals ${team.chars[i].name} for ${r.healed} (HP ${team.chars[i].hp}/${team.chars[i].maxHP})`,
-            );
-          }
-        });
-        break;
-      case "revive":
-        if (!state.selectedTarget) {
-          updateStatus("Select a friendly target to revive.");
-          return;
-        }
-        const revT =
-          state.players[state.selectedTarget.side].chars[
-            state.selectedTarget.idx
-          ];
-        if (!revT.isKO) {
-          updateStatus("That character is already active.");
-          return;
-        }
-        const reviver = getCurrentActor();
-        const revived = window.gameCore.revive(
-          revT,
-          reviver.mag * (card.mult || 1),
-        );
-        revT.isKO = false;
-        revT.hp = revived.target.hp;
-        log(`${reviver.name} revived ${revT.name} to ${revT.hp} HP.`);
-        break;
-      case "draw":
-        const num = card.mult || 1;
-        drawCardTo(p, num);
-        log(`${p.name} drew ${num} card(s).`);
-        break;
-      case "discard":
-        const oppP = state.players[1 - state.currentPlayer];
-        let cnt = card.mult || 1;
-        // use core discard (deterministic from end)
-        const dres = window.gameCore.discardFromHand(oppP.hand, cnt);
-        oppP.hand = dres.hand;
-        state.discard.push(...dres.removed);
-        log(
-          `${p.name} forced ${oppP.name} to discard ${dres.removed.length} card(s).`,
-        );
-        break;
-      case "steal":
-        const opp2 = state.players[1 - state.currentPlayer];
-        if (opp2.hand.length > 0) {
-          const sres = window.gameCore.stealCard(opp2.hand, p.hand);
-          opp2.hand = sres.from;
-          p.hand = sres.to;
-          log(`${p.name} stole a card from ${opp2.name}.`);
-        } else log("Steal failed - opponent had no cards.");
-        break;
-      default:
-        log(`Played ${card.name} (unhandled) by ${p.name}`);
-    }
-
-    // move played card to discard
-    const played = p.hand.splice(cardIdx, 1)[0];
-    state.discard.push(played);
-    state.selectedCardIdx = null;
-    state.selectedTarget = null;
-    markCharUsed();
-    updateUI();
-    saveState();
+    // fallback: signal missing action module
+    try { updateStatus('Action resolution unavailable (module missing).'); } catch (e) {}
   }
 
   function getCurrentActor() {
+    if (window.rpgGame && window.rpgGame.turnsModule && typeof window.rpgGame.turnsModule.getCurrentActor === 'function')
+      return window.rpgGame.turnsModule.getCurrentActor();
     const p = state.players[state.currentPlayer];
     // actor is nextCharIndex (the one taking action)
     let idx = state.nextCharIndex;
@@ -882,6 +823,11 @@
   }
 
   function applyDamage(target, dmg, reason) {
+    if (window.rpgGame && window.rpgGame.turnsModule && typeof window.rpgGame.turnsModule.applyDamage === 'function') {
+      // pass attacker if provided as 4th arg
+      const attacker = arguments.length >= 4 ? arguments[3] : undefined;
+      return window.rpgGame.turnsModule.applyDamage(target, dmg, reason, attacker);
+    }
     // Check for Dodge/Counter flags
     if (target.dodge) {
       log(`${reason} — ${target.name} dodged the attack! No damage.`);
@@ -916,6 +862,8 @@
   }
 
   function applyHeal(target, amt, reason) {
+    if (window.rpgGame && window.rpgGame.turnsModule && typeof window.rpgGame.turnsModule.applyHeal === 'function')
+      return window.rpgGame.turnsModule.applyHeal(target, amt, reason);
     if (target.isKO) {
       log(`Cannot heal ${target.name}; they are KO'd.`);
       return;
@@ -928,6 +876,8 @@
   }
 
   function markCharUsed() {
+    if (window.rpgGame && window.rpgGame.turnsModule && typeof window.rpgGame.turnsModule.markCharUsed === 'function')
+      return window.rpgGame.turnsModule.markCharUsed();
     const p = state.players[state.currentPlayer];
     // find next index that wasn't used and not KO
     let idx = state.nextCharIndex;
@@ -958,6 +908,8 @@
   }
 
   function endTurn(drawOption) {
+    if (window.rpgGame && window.rpgGame.turnsModule && typeof window.rpgGame.turnsModule.endTurn === 'function')
+      return window.rpgGame.turnsModule.endTurn(drawOption);
     // drawOption ignored - drawing is automatic: if the player has 5 or more, draw 1; otherwise draw up to 5
     const p = state.players[state.currentPlayer];
     let toDraw = 0;
@@ -1032,50 +984,13 @@
 
   // attach some basic click listeners to dynamically toggled elements (delegation fallback)
 
-  // Modal helpers for Absorb
-  const modal = $("#modal");
-  const modalTitle = $("#modal-title");
-  const modalBody = $("#modal-body");
-  const modalConfirm = $("#modal-confirm");
-  const modalCancel = $("#modal-cancel");
-  const resetBtn = $("#reset-btn");
-
-  // Modal listener management to avoid leaked listeners when modal closed by other means
-  let modalListeners = [];
-  function addModalListener(el, evt, fn) {
-    el.addEventListener(evt, fn);
-    modalListeners.push({ el, evt, fn });
-  }
-  function clearModalListeners() {
-    modalListeners.forEach((l) => {
-      try {
-        l.el.removeEventListener(l.evt, l.fn);
-      } catch (e) {}
-    });
-    modalListeners = [];
-  }
-  function closeModal() {
-    modal.classList.add("hidden");
-    try {
-      modalBody.innerHTML = "";
-    } catch (e) {} // defer removal so any currently-dispatched handlers still run
-    setTimeout(() => clearModalListeners(), 0);
-  }
-
-  // allow clicking outside modal-inner to close, and Esc to close
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeModal();
-  });
-
-  // Ensure modal is hidden on init and wire default confirm/cancel to close
-  try {
-    modal.classList.add("hidden");
-  } catch (e) {}
-  addModalListener(modalConfirm, "click", closeModal);
-  addModalListener(modalCancel, "click", closeModal);
+  // Modal helpers are provided by app-modal.js when available
+  const modal = (window.rpgGame && window.rpgGame.modalModule && window.rpgGame.modalModule.modal) || $("#modal");
+  const modalTitle = (window.rpgGame && window.rpgGame.modalModule && window.rpgGame.modalModule.modalTitle) || $("#modal-title");
+  const modalBody = (window.rpgGame && window.rpgGame.modalModule && window.rpgGame.modalModule.modalBody) || $("#modal-body");
+  const modalConfirm = (window.rpgGame && window.rpgGame.modalModule && window.rpgGame.modalModule.modalConfirm) || $("#modal-confirm");
+  const modalCancel = (window.rpgGame && window.rpgGame.modalModule && window.rpgGame.modalModule.modalCancel) || $("#modal-cancel");
+  // resetBtn may be used later; query lazily at use site
 
   // Persistence key (already declared earlier)
 
@@ -1114,7 +1029,7 @@
       const payload = { history: toPersist, redo: redoPersist };
       localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(payload));
     } catch (e) {
-      console.warn("persistHistory failed", e);
+      console.debug("persistHistory failed:", e && e.message ? e.message : e);
     }
   }
 
@@ -1134,12 +1049,17 @@
       updateUndoRedoButtons();
       return true;
     } catch (e) {
-      console.warn("loadPersistedHistory failed", e);
+      console.debug("loadPersistedHistory failed:", e && e.message ? e.message : e);
       return false;
     }
   }
 
   function applySnapshot(snap, opts = { recordHistory: false }) {
+    if (stateModule && typeof stateModule.applySnapshot === 'function') {
+      stateModule.applySnapshot(snap, opts);
+      // UI updates should be performed by caller after applying snapshot
+      return;
+    }
     // apply a snapshot (same shape as getSnapshot)
     state.players = snap.players.map((p) => ({
       id: p.id,
@@ -1164,20 +1084,24 @@
     state.draftPicksPerPlayer = snap.draftPicksPerPlayer;
     state.currentPlayer = snap.currentPlayer;
     state.nextCharIndex = snap.nextCharIndex;
-    // update UI and storage
-    // decide whether we're in draft mode or game mode based on picks
-    const totalPicked =
-      state.players[0].chars.length + state.players[1].chars.length;
-    if (totalPicked >= state.draftPicksPerPlayer * 2) {
-      // game mode
-      draftScreen.classList.add("hidden");
-      gameScreen.classList.remove("hidden");
-      updateUI();
-    } else {
-      // draft mode
-      draftScreen.classList.remove("hidden");
-      gameScreen.classList.add("hidden");
+    // restore UI-related fields if present
+    state.selectedCardIdx = typeof snap.selectedCardIdx !== 'undefined' ? snap.selectedCardIdx : null;
+    state.selectedTarget = typeof snap.selectedTarget !== 'undefined' ? snap.selectedTarget : null;
+    state.isDraft = typeof snap.isDraft !== 'undefined' ? !!snap.isDraft : null;
+    state.statusText = snap.statusText || '';
+    // update UI and storage. Prefer explicit isDraft flag in snapshot when available
+    let useDraftMode = null;
+    if (typeof snap.isDraft !== 'undefined') useDraftMode = !!snap.isDraft;
+    else {
+      const totalPicked = state.players[0].chars.length + state.players[1].chars.length;
+      useDraftMode = totalPicked < state.draftPicksPerPlayer * 2;
+    }
+    if (useDraftMode) {
+      setDraftModeUI(true);
       renderDraft();
+    } else {
+      setDraftModeUI(false);
+      updateUI();
     }
     if (opts.recordHistory) pushHistory(getSnapshot());
     try {
@@ -1187,6 +1111,8 @@
   }
 
   function getSnapshot() {
+    if (stateModule && typeof stateModule.getSnapshot === 'function')
+      return stateModule.getSnapshot();
     // Create a serializable snapshot of the game state
     return {
       players: state.players.map((p) => ({
@@ -1212,11 +1138,18 @@
       draftPicksPerPlayer: state.draftPicksPerPlayer,
       currentPlayer: state.currentPlayer,
       nextCharIndex: state.nextCharIndex,
+      selectedCardIdx: state.selectedCardIdx,
+      selectedTarget: state.selectedTarget,
+      isDraft: !!state.isDraft,
+      statusText: state.statusText || '',
     };
   }
 
   // Save the current state to localStorage and optionally record it in the undo history
   function saveState(recordHistory = true) {
+    if (stateModule && typeof stateModule.saveState === 'function') {
+      return stateModule.saveState(recordHistory);
+    }
     try {
       const snap = getSnapshot();
       if (recordHistory) pushHistory(snap);
@@ -1230,15 +1163,32 @@
       } catch (e) {}
       updateUndoRedoButtons();
     } catch (e) {
-      console.warn("Save failed", e);
+      console.debug("Save failed:", e && e.message ? e.message : e);
     }
   }
 
   function clearSavedState() {
+    if (stateModule && typeof stateModule.clearSavedState === 'function') {
+      return stateModule.clearSavedState();
+    }
     localStorage.removeItem(STORAGE_KEY);
   }
 
   function loadState() {
+    if (stateModule && typeof stateModule.loadState === 'function') {
+      const ok = stateModule.loadState();
+      if (!ok) return false;
+      // ensure UI reflects loaded state
+      const totalPicked = state.players[0].chars.length + state.players[1].chars.length;
+      if (totalPicked >= state.draftPicksPerPlayer * 2) {
+        setDraftModeUI(false);
+        updateUI();
+      } else {
+        setDraftModeUI(true);
+        renderDraft();
+      }
+      return true;
+    }
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
@@ -1277,14 +1227,11 @@
       const totalPicked =
         state.players[0].chars.length + state.players[1].chars.length;
       if (totalPicked >= state.draftPicksPerPlayer * 2) {
-        draftScreen.classList.add("hidden");
-        gameScreen.classList.remove("hidden");
+        setDraftModeUI(false);
       } else {
-        draftScreen.classList.remove("hidden");
-        gameScreen.classList.add("hidden");
+        setDraftModeUI(true);
       }
       updateUI();
-      renderDraft();
       // try to load persisted history (up to PERSIST_HISTORY_LIMIT). If none, seed with current snapshot
       const loaded = loadPersistedHistory();
       if (!loaded) {
@@ -1328,38 +1275,41 @@
     }
   }
 
-  resetBtn.addEventListener("click", () => {
-    if (!confirm("Reset saved game and reload?")) return;
-    clearSavedState();
-    location.reload();
-  });
+  // wire reset button (query at use time to avoid missing element if modalModule handled it)
+  try {
+    const rb = (window.rpgGame && window.rpgGame.modalModule && window.rpgGame.modalModule.resetBtn) || $("#reset-btn");
+    if (rb) rb.addEventListener("click", () => {
+      if (!confirm("Reset saved game and reload?")) return;
+      clearSavedState();
+      location.reload();
+    });
+  } catch (e) {}
 
   // Undo / Redo actions
   function undo() {
-    if (history.length <= 1) {
-      updateStatus("Nothing to undo.");
+    if (stateModule && typeof stateModule.undo === 'function') {
+      const ok = stateModule.undo();
+      if (!ok) updateStatus('Nothing to undo.');
+      else {
+        log('Undo performed.');
+        try { updateUI(); } catch (e) {}
+      }
       return;
     }
-    const current = history.pop();
-    redoStack.push(current);
-    const prev = history[history.length - 1];
-    applySnapshot(prev, { recordHistory: false });
-    // persist trimmed history & redo after undo
-    persistHistory();
-    log("Undo performed.");
+    updateStatus('Undo not available in this build.');
   }
 
   function redo() {
-    if (redoStack.length === 0) {
-      updateStatus("Nothing to redo.");
+    if (stateModule && typeof stateModule.redo === 'function') {
+      const ok = stateModule.redo();
+      if (!ok) updateStatus('Nothing to redo.');
+      else {
+        log('Redo performed.');
+        try { updateUI(); } catch (e) {}
+      }
       return;
     }
-    const next = redoStack.pop();
-    history.push(next);
-    applySnapshot(next, { recordHistory: false });
-    // persist trimmed history & redo after redo
-    persistHistory();
-    log("Redo performed.");
+    updateStatus('Redo not available in this build.');
   }
 
   if (typeof undoBtn !== "undefined" && undoBtn)
@@ -1367,199 +1317,51 @@
   if (typeof redoBtn !== "undefined" && redoBtn)
     redoBtn.addEventListener("click", redo);
 
+  // Absorb modal flow delegated to actionsModule when present
   function openAbsorbModal(card, player, cardIdx) {
-    // actor is current actor
-    const actorIdx = (() => {
-      let i = state.nextCharIndex;
-      while (
-        i < player.chars.length &&
-        (player.chars[i].isKO || player.usedThisTurn.includes(i))
-      )
-        i++;
-      return i;
-    })();
-    const actor = player.chars[actorIdx];
-    if (!actor) {
-      updateStatus("No available actor to perform Absorb.");
-      return;
+    if (window.rpgGame && window.rpgGame.actionsModule && typeof window.rpgGame.actionsModule.openAbsorbModal === 'function') {
+      return window.rpgGame.actionsModule.openAbsorbModal(card, player, cardIdx);
     }
-    const cap = actor.mag * (card.mult || 1);
-    // donors: any non-KO character (not the actor) with damage > 0
-    const donors = [];
-    state.players.forEach((pl, side) => {
-      pl.chars.forEach((ch, idx) => {
-        if (side === state.currentPlayer && idx === actorIdx) return; // skip actor
-        const damage = ch.maxHP - ch.hp;
-        if (!ch.isKO && damage > 0)
-          donors.push({ side, idx, char: ch, damage });
-      });
-    });
-    if (donors.length === 0) {
-      updateStatus("No valid donors with damage to absorb from.");
-      return;
+    try { updateStatus('Absorb flow unavailable (module missing).'); } catch (e) {}
+  }
+  // Expose light test hooks when running in a browser-like environment. Tests
+  // running under jsdom will use these to drive UI actions deterministically.
+  try {
+    if (typeof window !== "undefined") {
+      window.rpgGame = window.rpgGame || {};
+      // expose a small app API so extracted modules can call back into core helpers
+      window.rpgGame.app = {
+        getCurrentActor: getCurrentActor,
+        markCharUsed: markCharUsed,
+        drawCardTo: drawCardTo,
+        log: log,
+        updateStatus: updateStatus,
+        updateUI: updateUI,
+        shuffle: shuffle,
+        isCardPlayable: isCardPlayable,
+        saveState: saveState,
+        endTurn: endTurn,
+        pickChar: pickChar,
+        selectCard: selectCard,
+        selectTarget: selectTarget,
+      };
+      window.rpgGame.testHooks = {
+        getState: () => JSON.parse(JSON.stringify(state)),
+        renderDraft: () => renderDraft(),
+        pickChar: (idx) => pickChar(idx),
+        startDraft: () => startDraft(),
+        startGame: () => startGame(),
+        renderPlayers: () => renderPlayers(),
+        // persistence & history helpers
+        saveState: (recordHistory = true) => saveState(recordHistory),
+        loadState: () => loadState(),
+        getSnapshot: () => getSnapshot(),
+        // undo/redo
+        undo: () => undo(),
+        redo: () => redo(),
+      };
     }
-
-    modalTitle.textContent = `Absorb — ${actor.name} can absorb up to ${cap} damage`;
-    modalBody.innerHTML = "";
-    const info = document.createElement("div");
-    info.className = "small-meta";
-    info.textContent =
-      "Enter amounts to move from each donor (total must be ≤ cap).";
-    modalBody.appendChild(info);
-    donors.forEach((d) => {
-      const row = document.createElement("div");
-      row.className = "donor-row";
-      const name = document.createElement("div");
-      name.className = "donor-name";
-      name.textContent = `${state.players[d.side].name} — ${d.char.name} (damage ${d.damage})`;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = 0;
-      input.max = d.damage;
-      input.value = 0;
-      input.dataset.side = d.side;
-      input.dataset.idx = d.idx;
-      row.appendChild(name);
-      row.appendChild(input);
-      modalBody.appendChild(row);
-    });
-    // live total
-    const totalEl = document.createElement("div");
-    totalEl.className = "small-meta";
-    totalEl.style.marginTop = "8px";
-    totalEl.textContent = "Total: 0";
-    modalBody.appendChild(totalEl);
-
-    function updateTotal() {
-      const inputs = Array.from(modalBody.querySelectorAll("input"));
-      const total = inputs.reduce(
-        (s, i) => s + Math.max(0, Number(i.value) || 0),
-        0,
-      );
-      totalEl.textContent = `Total: ${total} (cap ${cap})`;
-      if (total > cap) totalEl.style.color = "var(--lose)";
-      else totalEl.style.color = "var(--muted)";
-    }
-    modalBody
-      .querySelectorAll("input")
-      .forEach((i) => i.addEventListener("input", updateTotal));
-
-    modal.classList.remove("hidden");
-
-    function confirm() {
-      const inputs = Array.from(modalBody.querySelectorAll("input"));
-      const requests = inputs
-        .map((i) => ({
-          side: Number(i.dataset.side),
-          idx: Number(i.dataset.idx),
-          amt: Math.max(0, Number(i.value) || 0),
-        }))
-        .filter((r) => r.amt > 0);
-      const total = requests.reduce((s, r) => s + r.amt, 0);
-      if (total > cap) {
-        alert("Total exceeds absorb cap. Reduce amounts.");
-        return;
-      }
-      // validate donors still have that much damage
-      for (const r of requests) {
-        const ch = state.players[r.side].chars[r.idx];
-        const avail = ch.maxHP - ch.hp;
-        if (r.amt > avail) {
-          alert("A donor no longer has that much damage available.");
-          return;
-        }
-      }
-      // use core absorb to compute new actor and donors
-      const donorsList = [];
-      state.players.forEach((pl, side) =>
-        pl.chars.forEach((ch) =>
-          donorsList.push({ hp: ch.hp, maxHP: ch.maxHP, isKO: !!ch.isKO }),
-        ),
-      );
-      // donorsList order corresponds to a flattened list; we need to map requests to flattened indices
-      const flatRequests = requests.map((r) => {
-        // compute flat index
-        let flatIndex = 0;
-        for (let s = 0; s < r.side; s++)
-          flatIndex += state.players[s].chars.length;
-        flatIndex += r.idx;
-        return { donorIndex: flatIndex, amt: r.amt, side: r.side, idx: r.idx };
-      });
-      // call core with actor and donors subset — produce donors array matching flattened structure
-      // actor representation
-      const actorFlatIndex = (() => {
-        let i = 0;
-        let count = 0;
-        while (i < state.players.length) {
-          if (i === state.currentPlayer) {
-            // actor is at player.current's chars[actorIdx]
-            break;
-          }
-          i++;
-        }
-        return 0;
-      })();
-      // For simplicity, call core with actor and donors array built per players but we must map back accordingly
-      // Build donors array ordered per player and char index
-      const flatDonors = [];
-      state.players.forEach((pl) =>
-        pl.chars.forEach((ch) =>
-          flatDonors.push({ hp: ch.hp, maxHP: ch.maxHP, isKO: !!ch.isKO }),
-        ),
-      );
-      const actorIdxLocal = (() => {
-        let i = state.nextCharIndex;
-        const p = player;
-        while (
-          i < p.chars.length &&
-          (p.chars[i].isKO || p.usedThisTurn.includes(i))
-        )
-          i++;
-        return i;
-      })();
-      const actorForCore = { hp: actor.hp, maxHP: actor.maxHP };
-      const coreRequests = flatRequests.map((fr) => ({
-        donorIndex: fr.donorIndex,
-        amt: fr.amt,
-      }));
-      let coreRes;
-      try {
-        coreRes = window.gameCore.absorbTransfer(
-          actorForCore,
-          flatDonors,
-          coreRequests,
-          cap,
-        );
-      } catch (e) {
-        alert("Absorb failed: " + e.message);
-        return;
-      }
-      // apply donors and actor back into state
-      // coreRes.donors is flat array matching flatDonors
-      let flatPos = 0;
-      state.players.forEach((pl, side) => {
-        pl.chars.forEach((ch, idx) => {
-          const d = coreRes.donors[flatPos++];
-          ch.hp = d.hp;
-          ch.isKO = !!d.isKO;
-        });
-      });
-      // actor is in player's chars at actorIdx
-      actor.hp = coreRes.actor.hp;
-      actor.isKO = !!coreRes.actor.isKO;
-      log(`${actor.name} absorbed ${coreRes.total} (self-damage).`);
-      // discard card
-      const played = player.hand.splice(cardIdx, 1)[0];
-      state.discard.push(played);
-      closeModal();
-      updateUI();
-      markCharUsed();
-    }
-    function cancel() {
-      closeModal();
-    }
-
-    addModalListener(modalConfirm, "click", confirm);
-    addModalListener(modalCancel, "click", cancel);
+  } catch (e) {
+    /* ignore */
   }
 })();

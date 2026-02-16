@@ -1,5 +1,40 @@
 # RPG Battle Card Game
 
+Local-play, client-only single-page app for a 2-player RPG card battle.
+
+How to run tests
+
+```bash
+npm install
+npm test --prefix "m:/Code/rpg-battle-card-game"
+```
+
+Manual play (in browser)
+
+1. Open `index.html` in a browser (double-click or serve the folder with a simple HTTP server).
+2. Draft characters by clicking available characters. Each player picks the configured number.
+3. After the draft completes, the game auto-starts. Use the Play / Skip buttons to play cards.
+
+Notes for developers
+
+- The code is modularized into small modules under the project root:
+  - `game-core.js` — deterministic core functions (unit-tested).
+  - `app-state.js` — state and persistence (undo/redo history and localStorage).
+  - `app-ui.js` — UI rendering helpers.
+  - `app-actions.js` — action resolution (card effects, Absorb modal flow).
+  - `app-turns.js` — turn/actor helpers (markCharUsed, endTurn, applyDamage/heal).
+  - `app-modal.js` — modal element & listener helpers.
+  - `app.js` — orchestration and fallback implementations when modules are not loaded.
+
+If you plan to manually test a full game locally, serve the folder (so localStorage works reliably). For example:
+
+```bash
+cd m:/Code/rpg-battle-card-game
+python -m http.server 8000
+# then open http://localhost:8000 in a browser
+```
+# RPG Battle Card Game
+
 A small, single-page, client-only 2-player RPG-style card battle demo.
 
 This repository contains a lightweight browser implementation of a two-player (same-device) draft-and-battle card game. It's intended for quick playtesting: no server, no build step.
